@@ -1,0 +1,1113 @@
+"""
+602AZ Infrastructure Reporting and Maintenance Management System
+AWS Lambda backend
+
+Handler:
+    index.handler
+
+Supported API Gateway routes:
+    POST /upload-url
+    POST /reports
+    GET  /reports
+    GET  /reports/{id}
+    PUT  /reports/{id}
+    GET  /image-url
+
+Configuration is read from Lambda environment variables first.
+If environment variables are unavailable, the function reads the API Gateway
+stage variables configured by the CloudFormation stack:
+
+    REPORTS_TABLE
+    IMAGE_BUCKET
+    SNS_TOPIC_ARN
+    FAILED_QUEUE_URL
+    SECRET_ARN
+    ENVIRONMENT_NAME
+    ALLOWED_ORIGIN
+    MAX_UPLOAD_BYTES
+"""
+
+import base64
+import json
+import os
+import re
+import uuid
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Any, Dict, Optional
+
+import boto3
+from botocore.exceptions import ClientError
+
+
+# AWS service clients
+dynamodb = boto3.resource("dynamodb")
+s3 = boto3.client("s3")
+sns = boto3.client("sns")
+sqs = boto3.client("sqs")
+secretsmanager = boto3.client("secretsmanager")
+
+
+VALID_STATUSES = {
+    "Submitted",
+    "Under Review",
+    "Assigned",
+    "In Progress",
+    "Resolved",
+    "Rejected",
+}
+
+ALLOWED_IMAGE_TYPES = {
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+}
+
+
+def utc_now() -> str:
+    """Return the current UTC date and time in ISO format."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def get_settings(event: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Read settings from Lambda environment variables.
+
+    When an environment variable is not available, read the value from
+    API Gateway stage variables configured by the CloudFormation stack.
+    """
+    stage_variables = event.get("stageVariables") or {}
+
+    def value(name: str, default: str = "") -> str:
+        return os.environ.get(name) or stage_variables.get(name) or default
+
+    max_upload_text = value("MAX_UPLOAD_BYTES", "10485760")
+
+    try:
+        max_upload_bytes = int(max_upload_text)
+    except (TypeError, ValueError):
+        max_upload_bytes = 10_485_760
+
+    return {
+        "table": value("REPORTS_TABLE"),
+        "bucket": value("IMAGE_BUCKET"),
+        "topic": value("SNS_TOPIC_ARN"),
+        "queue": value("FAILED_QUEUE_URL"),
+        "secret": value("SECRET_ARN"),
+        "environment": value("ENVIRONMENT_NAME", "dev"),
+        "origin": value("ALLOWED_ORIGIN", "*"),
+        "max_upload": max_upload_bytes,
+    }
+
+
+def decimal_default(value: Any) -> Any:
+    """Convert DynamoDB Decimal values into JSON-compatible numbers."""
+    if isinstance(value, Decimal):
+        if value % 1 == 0:
+            return int(value)
+        return float(value)
+
+    raise TypeError(
+        f"Object of type {type(value).__name__} is not JSON serializable"
+    )
+
+
+def api_response(
+    status_code: int,
+    body: Any,
+    origin: str = "*",
+) -> Dict[str, Any]:
+    """Return a Lambda proxy response for API Gateway."""
+    return {
+        "statusCode": status_code,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Headers": (
+                "Content-Type,"
+                "X-Amz-Date,"
+                "Authorization,"
+                "X-Api-Key,"
+                "X-Amz-Security-Token"
+            ),
+            "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS",
+            "Cache-Control": "no-store",
+        },
+        "body": json.dumps(body, default=decimal_default),
+    }
+
+
+def parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
+    """Read and validate the JSON body supplied by API Gateway."""
+    body = event.get("body")
+
+    if body in (None, ""):
+        return {}
+
+    if event.get("isBase64Encoded"):
+        body = base64.b64decode(body).decode("utf-8")
+
+    if isinstance(body, dict):
+        return body
+
+    decoded = json.loads(body)
+
+    if not isinstance(decoded, dict):
+        raise ValueError("JSON request body must be an object.")
+
+    return decoded
+
+
+def route_details(event: Dict[str, Any]) -> tuple[str, str]:
+    """Return the HTTP method and API Gateway resource path."""
+    method = str(event.get("httpMethod") or "").upper()
+    resource = str(event.get("resource") or event.get("path") or "")
+
+    # Support manual Lambda test events that use a real report path.
+    if resource.startswith("/reports/") and resource != "/reports/{id}":
+        resource = "/reports/{id}"
+
+    return method, resource
+
+
+def require_configuration(
+    configuration: Dict[str, Any],
+    required: list[str],
+    origin: str,
+) -> Optional[Dict[str, Any]]:
+    """Check that required stage variables or environment variables exist."""
+    missing = [
+        name
+        for name in required
+        if not configuration.get(name)
+    ]
+
+    if not missing:
+        return None
+
+    return api_response(
+        500,
+        {
+            "message": "Lambda configuration is incomplete.",
+            "missingConfiguration": missing,
+        },
+        origin,
+    )
+
+
+def clean_text(value: Any, maximum_length: int) -> str:
+    """Convert a value to clean text and apply a length limit."""
+    return str(value or "").strip()[:maximum_length]
+
+
+def make_report_id() -> str:
+    """Create a unique infrastructure report ID."""
+    date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
+    random_part = uuid.uuid4().hex[:8].upper()
+
+    return f"REPORT-{date_part}-{random_part}"
+
+
+def safe_file_name(file_name: Any) -> str:
+    """Remove unsafe characters from an uploaded file name."""
+    base_name = str(file_name or "road-damage.jpg")
+
+    base_name = base_name.split("/")[-1]
+    base_name = base_name.split("\\")[-1]
+
+    cleaned = re.sub(
+        r"[^A-Za-z0-9._-]",
+        "-",
+        base_name,
+    )
+
+    return cleaned[:120] or "road-damage.jpg"
+
+
+def send_failure(
+    configuration: Dict[str, Any],
+    operation: str,
+    error: Exception,
+    payload: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Send failed backend operation details to the SQS failure queue.
+
+    Failure to send the SQS message does not replace the original error.
+    """
+    queue_url = configuration.get("queue")
+
+    if not queue_url:
+        return
+
+    try:
+        sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps(
+                {
+                    "operation": operation,
+                    "error": str(error),
+                    "payload": payload or {},
+                    "failedAt": utc_now(),
+                },
+                default=decimal_default,
+            ),
+        )
+
+    except Exception as queue_error:
+        print(
+            "Unable to write failure information to SQS:",
+            repr(queue_error),
+        )
+
+
+def publish_notification(
+    configuration: Dict[str, Any],
+    subject: str,
+    message: str,
+    payload: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Publish a report notification through the SNS topic."""
+    topic_arn = configuration.get("topic")
+
+    if not topic_arn:
+        return
+
+    try:
+        sns.publish(
+            TopicArn=topic_arn,
+            Subject=subject[:100],
+            Message=message,
+        )
+
+    except Exception as error:
+        print(
+            "SNS notification failed:",
+            repr(error),
+        )
+
+        send_failure(
+            configuration,
+            "sns.publish",
+            error,
+            payload,
+        )
+
+
+def read_external_configuration(
+    configuration: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Read the external configuration secret.
+
+    The external secret is optional for the main report workflow. Therefore,
+    a Secrets Manager permission error does not stop report submission.
+    """
+    secret_arn = configuration.get("secret")
+
+    if not secret_arn:
+        return {}
+
+    try:
+        result = secretsmanager.get_secret_value(
+            SecretId=secret_arn,
+        )
+
+        secret_string = result.get(
+            "SecretString",
+            "{}",
+        )
+
+        parsed_secret = json.loads(secret_string)
+
+        if isinstance(parsed_secret, dict):
+            return parsed_secret
+
+        return {}
+
+    except Exception as error:
+        print(
+            "Secrets Manager read failed or was skipped:",
+            repr(error),
+        )
+
+        return {}
+
+
+def citizen_safe_report(
+    item: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Remove the citizen email from the public report-tracking response."""
+    if not item:
+        return item
+
+    result = dict(item)
+    result.pop("citizenEmail", None)
+
+    return result
+
+
+def create_upload_url(
+    event: Dict[str, Any],
+    configuration: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Generate a temporary presigned S3 form for image uploading."""
+    configuration_error = require_configuration(
+        configuration,
+        ["bucket"],
+        configuration["origin"],
+    )
+
+    if configuration_error:
+        return configuration_error
+
+    body = parse_body(event)
+
+    content_type = clean_text(
+        body.get("contentType"),
+        100,
+    ).lower()
+
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        return api_response(
+            400,
+            {
+                "message": "Unsupported image type.",
+                "allowedTypes": sorted(ALLOWED_IMAGE_TYPES),
+            },
+            configuration["origin"],
+        )
+
+    file_name = safe_file_name(
+        body.get("fileName")
+    )
+
+    date_folder = datetime.now(
+        timezone.utc
+    ).strftime("%Y/%m/%d")
+
+    image_key = (
+        f"reports/{date_folder}/"
+        f"{uuid.uuid4().hex}-{file_name}"
+    )
+
+    presigned_form = s3.generate_presigned_post(
+        Bucket=configuration["bucket"],
+        Key=image_key,
+        Fields={
+            "Content-Type": content_type,
+        },
+        Conditions=[
+            {
+                "Content-Type": content_type,
+            },
+            [
+                "content-length-range",
+                1,
+                configuration["max_upload"],
+            ],
+        ],
+        ExpiresIn=900,
+    )
+
+    return api_response(
+        200,
+        {
+            "uploadUrl": presigned_form["url"],
+            "fields": presigned_form["fields"],
+            "imageKey": image_key,
+            "expiresIn": 900,
+            "maximumUploadBytes": configuration["max_upload"],
+        },
+        configuration["origin"],
+    )
+
+
+def create_image_view_url(
+    event: Dict[str, Any],
+    configuration: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Generate a temporary URL for authority staff to view an image."""
+    configuration_error = require_configuration(
+        configuration,
+        ["bucket"],
+        configuration["origin"],
+    )
+
+    if configuration_error:
+        return configuration_error
+
+    query_parameters = (
+        event.get("queryStringParameters") or {}
+    )
+
+    image_key = clean_text(
+        query_parameters.get("imageKey"),
+        1024,
+    )
+
+    if (
+        not image_key.startswith("reports/")
+        or ".." in image_key
+    ):
+        return api_response(
+            400,
+            {
+                "message": (
+                    "A valid reports/ imageKey is required."
+                )
+            },
+            configuration["origin"],
+        )
+
+    image_url = s3.generate_presigned_url(
+        ClientMethod="get_object",
+        Params={
+            "Bucket": configuration["bucket"],
+            "Key": image_key,
+        },
+        ExpiresIn=900,
+    )
+
+    return api_response(
+        200,
+        {
+            "imageUrl": image_url,
+            "expiresIn": 900,
+        },
+        configuration["origin"],
+    )
+
+
+def create_report(
+    event: Dict[str, Any],
+    configuration: Dict[str, Any],
+    table: Any,
+) -> Dict[str, Any]:
+    """Create and store a new public infrastructure report."""
+    body = parse_body(event)
+
+    required_fields = [
+        "issueType",
+        "description",
+        "location",
+    ]
+
+    missing_fields = [
+        field
+        for field in required_fields
+        if not clean_text(
+            body.get(field),
+            500,
+        )
+    ]
+
+    if missing_fields:
+        return api_response(
+            400,
+            {
+                "message": "Missing required fields.",
+                "fields": missing_fields,
+            },
+            configuration["origin"],
+        )
+
+    image_key = clean_text(
+        body.get("imageKey"),
+        1024,
+    )
+
+    if image_key and (
+        not image_key.startswith("reports/")
+        or ".." in image_key
+    ):
+        return api_response(
+            400,
+            {
+                "message": "The supplied imageKey is invalid."
+            },
+            configuration["origin"],
+        )
+
+    report_id = make_report_id()
+    timestamp = utc_now()
+
+    item = {
+        "reportId": report_id,
+        "issueType": clean_text(
+            body.get("issueType"),
+            100,
+        ),
+        "description": clean_text(
+            body.get("description"),
+            2000,
+        ),
+        "location": clean_text(
+            body.get("location"),
+            500,
+        ),
+        "status": "Submitted",
+        "imageKey": image_key,
+        "citizenEmail": clean_text(
+            body.get("citizenEmail"),
+            320,
+        ),
+        "createdAt": timestamp,
+        "updatedAt": timestamp,
+        "assignedTo": "",
+        "comments": [],
+        "environment": configuration["environment"],
+    }
+
+    table.put_item(
+        Item=item,
+        ConditionExpression=(
+            "attribute_not_exists(reportId)"
+        ),
+    )
+
+    # Demonstrates runtime access to Secrets Manager.
+    # The result is optional for the prototype workflow.
+    read_external_configuration(configuration)
+
+    publish_notification(
+        configuration,
+        "New infrastructure report submitted",
+        (
+            f"Report ID: {report_id}\n"
+            f"Issue type: {item['issueType']}\n"
+            f"Location: {item['location']}\n"
+            "Status: Submitted"
+        ),
+        {
+            "reportId": report_id,
+        },
+    )
+
+    return api_response(
+        201,
+        {
+            "message": "Report submitted successfully.",
+            "reportId": report_id,
+            "status": "Submitted",
+            "createdAt": timestamp,
+        },
+        configuration["origin"],
+    )
+
+
+def get_report(
+    report_id: str,
+    configuration: Dict[str, Any],
+    table: Any,
+) -> Dict[str, Any]:
+    """Retrieve a report for citizen report tracking."""
+    result = table.get_item(
+        Key={
+            "reportId": report_id,
+        }
+    )
+
+    item = result.get("Item")
+
+    if not item:
+        return api_response(
+            404,
+            {
+                "message": "Report not found."
+            },
+            configuration["origin"],
+        )
+
+    return api_response(
+        200,
+        citizen_safe_report(item),
+        configuration["origin"],
+    )
+
+
+def list_reports(
+    event: Dict[str, Any],
+    configuration: Dict[str, Any],
+    table: Any,
+) -> Dict[str, Any]:
+    """
+    List all reports for authority staff.
+
+    The API Gateway route is protected by an API key in the stack.
+    """
+    scan_result = table.scan()
+    items = scan_result.get("Items", [])
+
+    while "LastEvaluatedKey" in scan_result:
+        scan_result = table.scan(
+            ExclusiveStartKey=scan_result[
+                "LastEvaluatedKey"
+            ]
+        )
+
+        items.extend(
+            scan_result.get("Items", [])
+        )
+
+    query_parameters = (
+        event.get("queryStringParameters") or {}
+    )
+
+    status_filter = clean_text(
+        query_parameters.get("status"),
+        100,
+    ).lower()
+
+    issue_filter = clean_text(
+        query_parameters.get("issueType"),
+        100,
+    ).lower()
+
+    search_text = clean_text(
+        query_parameters.get("search"),
+        500,
+    ).lower()
+
+    if status_filter:
+        items = [
+            item
+            for item in items
+            if str(
+                item.get("status", "")
+            ).lower() == status_filter
+        ]
+
+    if issue_filter:
+        items = [
+            item
+            for item in items
+            if str(
+                item.get("issueType", "")
+            ).lower() == issue_filter
+        ]
+
+    if search_text:
+        filtered_items = []
+
+        for item in items:
+            searchable_text = " ".join(
+                [
+                    str(item.get("reportId", "")),
+                    str(item.get("issueType", "")),
+                    str(item.get("description", "")),
+                    str(item.get("location", "")),
+                    str(item.get("status", "")),
+                    str(item.get("assignedTo", "")),
+                ]
+            ).lower()
+
+            if search_text in searchable_text:
+                filtered_items.append(item)
+
+        items = filtered_items
+
+    items.sort(
+        key=lambda item: item.get(
+            "createdAt",
+            "",
+        ),
+        reverse=True,
+    )
+
+    return api_response(
+        200,
+        {
+            "count": len(items),
+            "reports": items,
+        },
+        configuration["origin"],
+    )
+
+
+def update_report(
+    event: Dict[str, Any],
+    report_id: str,
+    configuration: Dict[str, Any],
+    table: Any,
+) -> Dict[str, Any]:
+    """
+    Update a report's status, assignment or comments.
+
+    The API Gateway route is protected by an API key in the stack.
+    """
+    result = table.get_item(
+        Key={
+            "reportId": report_id,
+        }
+    )
+
+    item = result.get("Item")
+
+    if not item:
+        return api_response(
+            404,
+            {
+                "message": "Report not found."
+            },
+            configuration["origin"],
+        )
+
+    body = parse_body(event)
+
+    allowed_update_fields = (
+        "status",
+        "assignedTo",
+        "comments",
+    )
+
+    if not any(
+        field in body
+        for field in allowed_update_fields
+    ):
+        return api_response(
+            400,
+            {
+                "message": (
+                    "Provide status, assignedTo or comments "
+                    "to update the report."
+                )
+            },
+            configuration["origin"],
+        )
+
+    old_status = str(
+        item.get(
+            "status",
+            "Submitted",
+        )
+    )
+
+    if "status" in body:
+        new_status = clean_text(
+            body.get("status"),
+            100,
+        )
+
+        if new_status not in VALID_STATUSES:
+            return api_response(
+                400,
+                {
+                    "message": "Invalid report status.",
+                    "allowedStatuses": sorted(
+                        VALID_STATUSES
+                    ),
+                },
+                configuration["origin"],
+            )
+
+        item["status"] = new_status
+
+    if "assignedTo" in body:
+        item["assignedTo"] = clean_text(
+            body.get("assignedTo"),
+            200,
+        )
+
+    if "comments" in body:
+        incoming_comments = body.get("comments")
+        existing_comments = item.get(
+            "comments",
+            [],
+        )
+
+        if not isinstance(
+            existing_comments,
+            list,
+        ):
+            existing_comments = []
+
+        if isinstance(
+            incoming_comments,
+            list,
+        ):
+            item["comments"] = [
+                clean_text(
+                    comment,
+                    1000,
+                )
+                for comment in incoming_comments
+            ][-50:]
+
+        else:
+            comment = clean_text(
+                incoming_comments,
+                1000,
+            )
+
+            if comment:
+                existing_comments.append(comment)
+
+            item["comments"] = (
+                existing_comments[-50:]
+            )
+
+    item["updatedAt"] = utc_now()
+
+    table.put_item(
+        Item=item,
+    )
+
+    publish_notification(
+        configuration,
+        "Infrastructure report updated",
+        (
+            f"Report ID: {report_id}\n"
+            f"Previous status: {old_status}\n"
+            f"Current status: "
+            f"{item.get('status', old_status)}\n"
+            f"Assigned to: "
+            f"{item.get('assignedTo', '')}"
+        ),
+        {
+            "reportId": report_id,
+        },
+    )
+
+    return api_response(
+        200,
+        {
+            "message": "Report updated successfully.",
+            "report": item,
+        },
+        configuration["origin"],
+    )
+
+
+def handler(
+    event: Dict[str, Any],
+    context: Any,
+) -> Dict[str, Any]:
+    """Main Lambda handler used by API Gateway."""
+    configuration = get_settings(event)
+    method, resource = route_details(event)
+
+    print(
+        json.dumps(
+            {
+                "requestId": getattr(
+                    context,
+                    "aws_request_id",
+                    "local-test",
+                ),
+                "method": method,
+                "resource": resource,
+                "environment": configuration[
+                    "environment"
+                ],
+            }
+        )
+    )
+
+    try:
+        if method == "OPTIONS":
+            return api_response(
+                200,
+                {
+                    "message": (
+                        "CORS preflight successful."
+                    )
+                },
+                configuration["origin"],
+            )
+
+        if (
+            resource == "/upload-url"
+            and method == "POST"
+        ):
+            return create_upload_url(
+                event,
+                configuration,
+            )
+
+        if (
+            resource == "/image-url"
+            and method == "GET"
+        ):
+            return create_image_view_url(
+                event,
+                configuration,
+            )
+
+        configuration_error = require_configuration(
+            configuration,
+            ["table"],
+            configuration["origin"],
+        )
+
+        if configuration_error:
+            return configuration_error
+
+        table = dynamodb.Table(
+            configuration["table"]
+        )
+
+        if (
+            resource == "/reports"
+            and method == "POST"
+        ):
+            return create_report(
+                event,
+                configuration,
+                table,
+            )
+
+        if (
+            resource == "/reports"
+            and method == "GET"
+        ):
+            return list_reports(
+                event,
+                configuration,
+                table,
+            )
+
+        if resource == "/reports/{id}":
+            path_parameters = (
+                event.get("pathParameters") or {}
+            )
+
+            report_id = clean_text(
+                path_parameters.get("id"),
+                100,
+            )
+
+            # Support manually constructed Lambda test events.
+            if not report_id:
+                actual_path = str(
+                    event.get("path") or ""
+                )
+
+                if actual_path.startswith(
+                    "/reports/"
+                ):
+                    report_id = clean_text(
+                        actual_path.split(
+                            "/reports/",
+                            1,
+                        )[1],
+                        100,
+                    )
+
+            if not report_id:
+                return api_response(
+                    400,
+                    {
+                        "message": (
+                            "A report ID is required."
+                        )
+                    },
+                    configuration["origin"],
+                )
+
+            if method == "GET":
+                return get_report(
+                    report_id,
+                    configuration,
+                    table,
+                )
+
+            if method == "PUT":
+                return update_report(
+                    event,
+                    report_id,
+                    configuration,
+                    table,
+                )
+
+        return api_response(
+            404,
+            {
+                "message": "Route not found.",
+                "method": method,
+                "resource": resource,
+            },
+            configuration["origin"],
+        )
+
+    except json.JSONDecodeError:
+        return api_response(
+            400,
+            {
+                "message": (
+                    "Request body must contain valid JSON."
+                )
+            },
+            configuration["origin"],
+        )
+
+    except ValueError as error:
+        return api_response(
+            400,
+            {
+                "message": str(error)
+            },
+            configuration["origin"],
+        )
+
+    except ClientError as error:
+        print(
+            "AWS client error:",
+            repr(error),
+        )
+
+        send_failure(
+            configuration,
+            "backend.aws",
+            error,
+            {
+                "resource": resource,
+                "method": method,
+            },
+        )
+
+        error_code = error.response.get(
+            "Error",
+            {},
+        ).get(
+            "Code",
+            "AWSClientError",
+        )
+
+        return api_response(
+            500,
+            {
+                "message": (
+                    "An AWS service operation failed."
+                ),
+                "errorCode": error_code,
+            },
+            configuration["origin"],
+        )
+
+    except Exception as error:
+        print(
+            "Unhandled backend error:",
+            repr(error),
+        )
+
+        send_failure(
+            configuration,
+            "backend.unhandled",
+            error,
+            {
+                "resource": resource,
+                "method": method,
+            },
+        )
+
+        return api_response(
+            500,
+            {
+                "message": "Internal server error."
+            },
+            configuration["origin"],
+        )
