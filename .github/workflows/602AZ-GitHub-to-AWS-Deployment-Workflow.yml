@@ -1,47 +1,30 @@
-name: 602AZ Professional AWS Deployment Workflow
+name: 602AZ GitHub to AWS Deployment Workflow
 
 on:
   workflow_dispatch:
     inputs:
       environment:
-        description: Deployment environment
+        description: Select deployment environment
         required: true
         default: dev
         type: choice
-        options: [dev, test, prod]
-      deploy_frontend:
-        description: Upload existing frontend files to the S3 website bucket
-        required: true
-        default: false
-        type: boolean
+        options:
+          - dev
+          - test
+          - prod
       enable_cloudtrail:
         description: Enable optional CloudTrail resources
         required: true
         default: false
         type: boolean
-  push:
-    branches: [main]
-    paths:
-      - "infrastructure/**"
-      - ".github/workflows/aws-deploy.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "infrastructure/**"
-      - ".github/workflows/aws-deploy.yml"
 
 permissions:
   contents: read
 
-concurrency:
-  group: 602az-${{ github.ref }}-${{ inputs.environment || 'dev' }}
-  cancel-in-progress: false
-
 env:
   AWS_REGION: us-east-1
   STACK_NAME: infrastructure-reporting-602az
-  TEMPLATE_FILE: infrastructure/cloudformation.yaml
-  FRONTEND_DIRECTORY: frontend
+  TEMPLATE_FILE: cloudformation
   EXISTING_BACKEND_FUNCTION: infrastructure-reporting-602az-backend
   PROJECT_PREFIX: infrastructure-reporting-602az
 
@@ -49,26 +32,32 @@ jobs:
   validate:
     name: 1. Validate Repository and CloudFormation
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Confirm required files
+      - name: Show repository files
+        shell: bash
+        run: |
+          echo "Repository files:"
+          find . -maxdepth 3 -type f | sort
+
+      - name: Confirm CloudFormation template exists
         shell: bash
         run: |
           set -euo pipefail
-          test -f "${TEMPLATE_FILE}" || {
+
+          if [ ! -f "${TEMPLATE_FILE}" ]; then
             echo "::error::CloudFormation template not found at ${TEMPLATE_FILE}"
+            echo "Available files in repository root:"
+            ls -la
             exit 1
-          }
-          echo "CloudFormation template found: ${TEMPLATE_FILE}"
-          if [ -d "${FRONTEND_DIRECTORY}" ]; then
-            echo "Existing frontend directory found: ${FRONTEND_DIRECTORY}"
-          else
-            echo "::notice::No frontend directory found. Infrastructure validation will continue."
           fi
 
-      - name: Configure temporary AWS learner-lab credentials
+          echo "CloudFormation template found: ${TEMPLATE_FILE}"
+
+      - name: Configure AWS learner-lab credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -77,16 +66,16 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           mask-aws-account-id: true
 
-      - name: Prove GitHub-to-AWS connection
+      - name: Verify GitHub connection with AWS
         shell: bash
         run: |
           set -euo pipefail
-          echo "GitHub Actions runner successfully authenticated with AWS."
+          echo "Testing GitHub Actions connection to AWS..."
           aws sts get-caller-identity
-          aws configure list
-          echo "Region: ${AWS_REGION}"
+          echo "AWS connection successful."
+          echo "AWS Region: ${AWS_REGION}"
 
-      - name: Validate CloudFormation syntax with AWS
+      - name: Validate CloudFormation template
         shell: bash
         run: |
           set -euo pipefail
@@ -94,37 +83,27 @@ jobs:
             --template-body "file://${TEMPLATE_FILE}" \
             --region "${AWS_REGION}"
 
-      - name: Show deployment plan information
+      - name: Confirm existing Lambda function
         shell: bash
         run: |
           set -euo pipefail
-          echo "Repository: ${GITHUB_REPOSITORY}"
-          echo "Commit: ${GITHUB_SHA}"
-          echo "Branch or tag: ${GITHUB_REF_NAME}"
-          echo "Actor: ${GITHUB_ACTOR}"
-          echo "Template: ${TEMPLATE_FILE}"
-          echo "Stack: ${STACK_NAME}"
-          echo "Existing Lambda: ${EXISTING_BACKEND_FUNCTION}"
-          echo "No backend or frontend source code is modified by this workflow."
+          aws lambda get-function \
+            --function-name "${EXISTING_BACKEND_FUNCTION}" \
+            --region "${AWS_REGION}" \
+            --query "Configuration.[FunctionName,Runtime,State,LastModified]" \
+            --output table
 
   deploy:
     name: 2. Deploy AWS Infrastructure
     needs: validate
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || 'dev' }}
-    outputs:
-      api_base_url: ${{ steps.stack_outputs.outputs.api_base_url }}
-      website_bucket: ${{ steps.stack_outputs.outputs.website_bucket }}
-      website_url: ${{ steps.stack_outputs.outputs.website_url }}
-      reports_table: ${{ steps.stack_outputs.outputs.reports_table }}
-      image_bucket: ${{ steps.stack_outputs.outputs.image_bucket }}
-      dashboard_name: ${{ steps.stack_outputs.outputs.dashboard_name }}
+    environment: ${{ inputs.environment }}
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Configure temporary AWS learner-lab credentials
+      - name: Configure AWS learner-lab credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -133,25 +112,16 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           mask-aws-account-id: true
 
-      - name: Check existing Lambda function
-        shell: bash
-        run: |
-          set -euo pipefail
-          aws lambda get-function \
-            --function-name "${EXISTING_BACKEND_FUNCTION}" \
-            --region "${AWS_REGION}" \
-            --query "Configuration.[FunctionName,Runtime,LastModified,State]" \
-            --output table
-
-      - name: Deploy or update CloudFormation stack
+      - name: Deploy CloudFormation stack
         shell: bash
         env:
-          ENVIRONMENT_NAME: ${{ inputs.environment || 'dev' }}
-          ENABLE_CLOUDTRAIL: ${{ inputs.enable_cloudtrail || 'false' }}
+          ENVIRONMENT_NAME: ${{ inputs.environment }}
+          ENABLE_CLOUDTRAIL: ${{ inputs.enable_cloudtrail }}
           NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
           ALLOWED_CORS_ORIGIN: ${{ vars.ALLOWED_CORS_ORIGIN || '*' }}
         run: |
           set -euo pipefail
+
           aws cloudformation deploy \
             --template-file "${TEMPLATE_FILE}" \
             --stack-name "${STACK_NAME}-${ENVIRONMENT_NAME}" \
@@ -171,26 +141,68 @@ jobs:
               ManagedBy="GitHub-Actions" \
               Repository="${GITHUB_REPOSITORY}"
 
-      - name: Display stack status
+      - name: Show CloudFormation stack status
         shell: bash
         env:
-          ENVIRONMENT_NAME: ${{ inputs.environment || 'dev' }}
+          ENVIRONMENT_NAME: ${{ inputs.environment }}
         run: |
           set -euo pipefail
           aws cloudformation describe-stacks \
             --stack-name "${STACK_NAME}-${ENVIRONMENT_NAME}" \
             --region "${AWS_REGION}" \
-            --query "Stacks[0].[StackName,StackStatus,LastUpdatedTime]" \
+            --query "Stacks[0].[StackName,StackStatus,CreationTime,LastUpdatedTime]" \
             --output table
 
-      - name: Collect CloudFormation outputs
-        id: stack_outputs
+      - name: Show deployed AWS resources
         shell: bash
         env:
-          ENVIRONMENT_NAME: ${{ inputs.environment || 'dev' }}
+          ENVIRONMENT_NAME: ${{ inputs.environment }}
         run: |
           set -euo pipefail
+          aws cloudformation list-stack-resources \
+            --stack-name "${STACK_NAME}-${ENVIRONMENT_NAME}" \
+            --region "${AWS_REGION}" \
+            --query "StackResourceSummaries[].{Resource:LogicalResourceId,Type:ResourceType,Status:ResourceStatus}" \
+            --output table
+
+      - name: Show CloudFormation outputs
+        shell: bash
+        env:
+          ENVIRONMENT_NAME: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stacks \
+            --stack-name "${STACK_NAME}-${ENVIRONMENT_NAME}" \
+            --region "${AWS_REGION}" \
+            --query "Stacks[0].Outputs[].{Output:OutputKey,Value:OutputValue}" \
+            --output table
+
+  verify:
+    name: 3. Verify AWS Connection and Resources
+    needs: deploy
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Configure AWS learner-lab credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Verify stack and collect outputs
+        id: outputs
+        shell: bash
+        env:
+          ENVIRONMENT_NAME: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+
           CURRENT_STACK="${STACK_NAME}-${ENVIRONMENT_NAME}"
+
           get_output() {
             aws cloudformation describe-stacks \
               --stack-name "${CURRENT_STACK}" \
@@ -198,189 +210,122 @@ jobs:
               --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue | [0]" \
               --output text
           }
+
           API_BASE_URL="$(get_output ApiBaseUrl)"
           WEBSITE_BUCKET="$(get_output WebsiteBucketName)"
           WEBSITE_URL="$(get_output WebsiteUrl)"
-          REPORTS_TABLE="$(get_output ReportsTableName)"
           IMAGE_BUCKET="$(get_output ImageBucketName)"
+          REPORTS_TABLE="$(get_output ReportsTableName)"
           DASHBOARD_NAME="$(get_output MonitoringDashboardName)"
-          {
-            echo "api_base_url=${API_BASE_URL}"
-            echo "website_bucket=${WEBSITE_BUCKET}"
-            echo "website_url=${WEBSITE_URL}"
-            echo "reports_table=${REPORTS_TABLE}"
-            echo "image_bucket=${IMAGE_BUCKET}"
-            echo "dashboard_name=${DASHBOARD_NAME}"
-          } >> "${GITHUB_OUTPUT}"
-          echo "### AWS Deployment Outputs" >> "${GITHUB_STEP_SUMMARY}"
-          echo "| Resource | Value |" >> "${GITHUB_STEP_SUMMARY}"
-          echo "|---|---|" >> "${GITHUB_STEP_SUMMARY}"
-          echo "| Stack | ${CURRENT_STACK} |" >> "${GITHUB_STEP_SUMMARY}"
-          echo "| API base URL | ${API_BASE_URL} |" >> "${GITHUB_STEP_SUMMARY}"
-          echo "| Website bucket | ${WEBSITE_BUCKET} |" >> "${GITHUB_STEP_SUMMARY}"
-          echo "| Website URL | ${WEBSITE_URL} |" >> "${GITHUB_STEP_SUMMARY}"
-          echo "| Image bucket | ${IMAGE_BUCKET} |" >> "${GITHUB_STEP_SUMMARY}"
-          echo "| DynamoDB table | ${REPORTS_TABLE} |" >> "${GITHUB_STEP_SUMMARY}"
-          echo "| CloudWatch dashboard | ${DASHBOARD_NAME} |" >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Display deployed AWS resources
-        shell: bash
-        env:
-          ENVIRONMENT_NAME: ${{ inputs.environment || 'dev' }}
-        run: |
-          set -euo pipefail
-          aws cloudformation list-stack-resources \
-            --stack-name "${STACK_NAME}-${ENVIRONMENT_NAME}" \
-            --region "${AWS_REGION}" \
-            --query "StackResourceSummaries[].{Type:ResourceType,LogicalID:LogicalResourceId,Status:ResourceStatus}" \
-            --output table
+          echo "api_base_url=${API_BASE_URL}" >> "${GITHUB_OUTPUT}"
+          echo "website_bucket=${WEBSITE_BUCKET}" >> "${GITHUB_OUTPUT}"
+          echo "website_url=${WEBSITE_URL}" >> "${GITHUB_OUTPUT}"
+          echo "image_bucket=${IMAGE_BUCKET}" >> "${GITHUB_OUTPUT}"
+          echo "reports_table=${REPORTS_TABLE}" >> "${GITHUB_OUTPUT}"
+          echo "dashboard_name=${DASHBOARD_NAME}" >> "${GITHUB_OUTPUT}"
 
-  frontend:
-    name: 3. Publish Existing Frontend Without Code Changes
-    needs: deploy
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy_frontend == true
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || 'dev' }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Configure temporary AWS learner-lab credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ env.AWS_REGION }}
-          mask-aws-account-id: true
-
-      - name: Confirm frontend files
+      - name: Verify existing Lambda function
         shell: bash
         run: |
           set -euo pipefail
-          test -d "${FRONTEND_DIRECTORY}" || {
-            echo "::error::Frontend directory not found at ${FRONTEND_DIRECTORY}"
-            exit 1
-          }
-          test -f "${FRONTEND_DIRECTORY}/index.html" || {
-            echo "::error::index.html not found in ${FRONTEND_DIRECTORY}"
-            exit 1
-          }
-          echo "The workflow uploads the existing files exactly as committed."
-          echo "It does not edit HTML, CSS, JavaScript, backend code, or API values."
-
-      - name: Sync existing frontend files to S3
-        shell: bash
-        run: |
-          set -euo pipefail
-          aws s3 sync \
-            "${FRONTEND_DIRECTORY}/" \
-            "s3://${{ needs.deploy.outputs.website_bucket }}/" \
-            --delete \
-            --region "${AWS_REGION}"
-
-      - name: Confirm website objects
-        shell: bash
-        run: |
-          set -euo pipefail
-          aws s3 ls \
-            "s3://${{ needs.deploy.outputs.website_bucket }}/" \
-            --recursive \
-            --region "${AWS_REGION}"
-
-  verify:
-    name: 4. Verify AWS Resources and API Connection
-    needs: [deploy, frontend]
-    if: always() && needs.deploy.result == 'success' && (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || 'dev' }}
-    steps:
-      - name: Configure temporary AWS learner-lab credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ env.AWS_REGION }}
-          mask-aws-account-id: true
-
-      - name: Verify Lambda permission connection
-        shell: bash
-        run: |
-          set -euo pipefail
-          aws lambda get-policy \
+          aws lambda get-function \
             --function-name "${EXISTING_BACKEND_FUNCTION}" \
             --region "${AWS_REGION}" \
-            --output json || {
-              echo "::warning::Lambda policy could not be displayed. Review the Lambda permission resource."
-            }
+            --query "Configuration.[FunctionName,Runtime,State,LastModified]" \
+            --output table
 
       - name: Verify DynamoDB table
         shell: bash
         run: |
           set -euo pipefail
           aws dynamodb describe-table \
-            --table-name "${{ needs.deploy.outputs.reports_table }}" \
+            --table-name "${{ steps.outputs.outputs.reports_table }}" \
             --region "${AWS_REGION}" \
             --query "Table.[TableName,TableStatus,BillingModeSummary.BillingMode]" \
             --output table
 
-      - name: Verify S3 image-bucket controls
+      - name: Verify S3 image bucket protection
         shell: bash
         run: |
           set -euo pipefail
           aws s3api get-bucket-versioning \
-            --bucket "${{ needs.deploy.outputs.image_bucket }}" \
-            --region "${AWS_REGION}"
-          aws s3api get-public-access-block \
-            --bucket "${{ needs.deploy.outputs.image_bucket }}" \
+            --bucket "${{ steps.outputs.outputs.image_bucket }}" \
             --region "${AWS_REGION}"
 
-      - name: Safe API connectivity check
-        shell: bash
-        run: |
-          set -euo pipefail
-          API_URL="${{ needs.deploy.outputs.api_base_url }}"
-          echo "Testing API Gateway reachability without creating or changing data."
-          STATUS_CODE="$(curl --silent --output api-response.txt --write-out "%{http_code}" --max-time 20 "${API_URL}/reports/workflow-connectivity-check")"
-          echo "HTTP status: ${STATUS_CODE}"
-          cat api-response.txt || true
-          if [ "${STATUS_CODE}" = "000" ]; then
-            echo "::error::API Gateway could not be reached."
-            exit 1
-          fi
-          echo "API Gateway is reachable. Application success still depends on the existing Lambda backend."
+          aws s3api get-public-access-block \
+            --bucket "${{ steps.outputs.outputs.image_bucket }}" \
+            --region "${AWS_REGION}"
 
       - name: Verify CloudWatch dashboard
         shell: bash
         run: |
           set -euo pipefail
           aws cloudwatch get-dashboard \
-            --dashboard-name "${{ needs.deploy.outputs.dashboard_name }}" \
+            --dashboard-name "${{ steps.outputs.outputs.dashboard_name }}" \
             --region "${AWS_REGION}" \
             --query "DashboardName" \
             --output text
+
+      - name: Test API Gateway connection safely
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          API_URL="${{ steps.outputs.outputs.api_base_url }}"
+          TEST_URL="${API_URL}/reports/workflow-connection-test"
+
+          echo "Testing API Gateway connection:"
+          echo "${TEST_URL}"
+
+          HTTP_STATUS="$(
+            curl \
+              --silent \
+              --show-error \
+              --output api-response.txt \
+              --write-out "%{http_code}" \
+              --max-time 20 \
+              "${TEST_URL}" || true
+          )"
+
+          echo "HTTP status: ${HTTP_STATUS}"
+          echo "Response:"
+          cat api-response.txt || true
+
+          if [ "${HTTP_STATUS}" = "000" ]; then
+            echo "::error::GitHub Actions could not reach API Gateway."
+            exit 1
+          fi
+
+          echo "API Gateway is reachable from GitHub Actions."
+          echo "A 4xx or 5xx response may still indicate an application or Lambda issue."
 
       - name: Create professional workflow summary
         shell: bash
         run: |
           {
-            echo "## 602AZ GitHub-to-AWS Workflow Completed"
+            echo "# 602AZ GitHub-to-AWS Deployment Summary"
             echo ""
-            echo "### Connection path"
-            echo "GitHub repository → GitHub Actions → AWS STS credentials → CloudFormation → AWS services"
+            echo "## Workflow connection"
+            echo "\`GitHub Repository → GitHub Actions → AWS STS → CloudFormation → AWS Resources\`"
             echo ""
-            echo "### Verified components"
-            echo "- Temporary AWS learner-lab authentication"
-            echo "- CloudFormation validation"
-            echo "- Existing Lambda availability"
-            echo "- CloudFormation stack deployment"
-            echo "- API Gateway output"
+            echo "## Verified components"
+            echo "- AWS learner-lab authentication"
+            echo "- CloudFormation template validation"
+            echo "- Existing Lambda function"
+            echo "- CloudFormation deployment"
+            echo "- API Gateway endpoint"
             echo "- DynamoDB table"
-            echo "- S3 image-bucket controls"
-            echo "- CloudWatch dashboard"
-            echo "- API Gateway network connectivity"
+            echo "- S3 website and image buckets"
+            echo "- CloudWatch monitoring dashboard"
             echo ""
-            echo "### Source-code protection"
-            echo "This workflow does not edit the backend or frontend source code."
+            echo "## Source-code protection"
+            echo "This workflow does not edit the frontend or backend source code."
+            echo ""
+            echo "## Main outputs"
+            echo "- API URL: ${{ steps.outputs.outputs.api_base_url }}"
+            echo "- Website URL: ${{ steps.outputs.outputs.website_url }}"
+            echo "- Website bucket: ${{ steps.outputs.outputs.website_bucket }}"
+            echo "- Image bucket: ${{ steps.outputs.outputs.image_bucket }}"
+            echo "- DynamoDB table: ${{ steps.outputs.outputs.reports_table }}"
           } >> "${GITHUB_STEP_SUMMARY}"
