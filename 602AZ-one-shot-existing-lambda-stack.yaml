@@ -1,0 +1,733 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  602AZ Cloud-Based Infrastructure Reporting and Maintenance Management System. One-deployment lab-compatible stack that creates
+  the S3 website and image buckets, API Gateway REST API, DynamoDB, SNS, SQS, Secrets Manager, CloudWatch monitoring, and
+  optional CloudTrail, then connects API Gateway to a Lambda function that already exists in the same AWS account and Region.
+  This template creates no IAM roles, no IAM policies, and no Lambda function, so it does not call iam:CreateRole or iam:PassRole.
+
+Parameters:
+  ExistingBackendFunctionName:
+    Type: String
+    Default: 'infrastructure-reporting-602az-backend'
+    AllowedPattern: '^[A-Za-z0-9-_]{1,64}$'
+    ConstraintDescription: Enter the exact name of an existing Lambda function.
+
+    Description: Exact name of the pre-existing Lambda function in the same account and us-east-1. The function must 
+      exist before this stack is created.
+  ProjectPrefix:
+    Type: String
+    Default: infrastructure-reporting-602az
+    AllowedPattern: '^[a-z0-9][a-z0-9-]{2,30}$'
+    ConstraintDescription: Use 3-31 lowercase letters, numbers, or hyphens.
+
+  EnvironmentName:
+    Type: String
+    Default: dev
+    AllowedValues:
+    - dev
+    - test
+    - prod
+
+  NotificationEmail:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[^@\s]+@[^@\s]+\.[^@\s]+$'
+    ConstraintDescription: Enter a valid email address or leave blank.
+
+  AllowedCorsOrigin:
+    Type: String
+    Default: '*'
+
+  EnablePublicWebsitePolicy:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+    - 'true'
+    - 'false'
+  EnableCloudTrail:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+    - 'true'
+    - 'false'
+
+  SecretInitialValue:
+    Type: String
+    NoEcho: true
+    Default: '{"externalApiKey":"REPLACE_ME","externalWebhookUrl":""}'
+
+Conditions:
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, '']]
+  MakeWebsitePublic: !Equals [!Ref EnablePublicWebsitePolicy, 'true']
+  CreateCloudTrail: !Equals [!Ref EnableCloudTrail, 'true']
+
+Resources:
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      OwnershipControls:
+        Rules:
+        - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: !If [MakeWebsitePublic, false, true]
+        IgnorePublicAcls: !If [MakeWebsitePublic, false, true]
+        BlockPublicPolicy: !If [MakeWebsitePublic, false, true]
+        RestrictPublicBuckets: !If [MakeWebsitePublic, false, true]
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+      - Key: Project
+        Value: 602AZ-Infrastructure-Reporting
+      - Key: Environment
+        Value: !Ref EnvironmentName
+      - Key: Purpose
+        Value: StaticWebsite
+
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: MakeWebsitePublic
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: PublicReadForStaticWebsite
+          Effect: Allow
+          Principal: '*'
+          Action: s3:GetObject
+          Resource: !Sub '${WebsiteBucket.Arn}/*'
+
+  ImageBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+        - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      CorsConfiguration:
+        CorsRules:
+        - AllowedHeaders:
+          - '*'
+          AllowedMethods:
+          - POST
+          - GET
+          - HEAD
+          AllowedOrigins:
+          - !Ref AllowedCorsOrigin
+          ExposedHeaders:
+          - ETag
+          MaxAge: 3000
+      LifecycleConfiguration:
+        Rules:
+        - Id: AbortIncompleteMultipartUploads
+          Status: Enabled
+          AbortIncompleteMultipartUpload:
+            DaysAfterInitiation: 7
+      Tags:
+      - Key: Project
+        Value: 602AZ-Infrastructure-Reporting
+      - Key: Environment
+        Value: !Ref EnvironmentName
+      - Key: Purpose
+        Value: UploadedRoadDamageImages
+
+  ReportsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: reportId
+        AttributeType: S
+      KeySchema:
+      - AttributeName: reportId
+        KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+      - Key: Project
+        Value: 602AZ-Infrastructure-Reporting
+      - Key: Environment
+        Value: !Ref EnvironmentName
+
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Infrastructure Reports
+      Tags:
+      - Key: Project
+        Value: 602AZ-Infrastructure-Reporting
+      - Key: Environment
+        Value: !Ref EnvironmentName
+
+  NotificationEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+      TopicArn: !Ref NotificationTopic
+
+  FailedOperationsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      VisibilityTimeout: 60
+      SqsManagedSseEnabled: true
+      Tags:
+      - Key: Project
+        Value: 602AZ-Infrastructure-Reporting
+      - Key: Environment
+        Value: !Ref EnvironmentName
+      - Key: Purpose
+        Value: FailedOperationsDLQ
+
+  ExternalConfigurationSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      SecretString: !Ref SecretInitialValue
+      Tags:
+      - Key: Project
+        Value: 602AZ-Infrastructure-Reporting
+      - Key: Environment
+        Value: !Ref EnvironmentName
+
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${ProjectPrefix}-${EnvironmentName}-api'
+      EndpointConfiguration:
+        Types:
+        - REGIONAL
+      Body:
+        swagger: '2.0'
+        info:
+          title: 602AZ Infrastructure Reporting API
+          version: '1.0'
+        schemes:
+        - https
+        consumes:
+        - application/json
+        produces:
+        - application/json
+        x-amazon-apigateway-api-key-source: HEADER
+        securityDefinitions:
+          api_key:
+            type: apiKey
+            name: x-api-key
+            in: header
+        paths:
+          /reports:
+            post:
+              summary: Submit a new infrastructure report
+              responses:
+                '201':
+                  description: Report created
+                '400':
+                  description: Invalid request
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ExistingBackendFunctionName}/invocations'
+            get:
+              summary: List and filter all reports for authority staff
+              security:
+              - api_key: []
+              responses:
+                '200':
+                  description: Report list
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ExistingBackendFunctionName}/invocations'
+            options:
+              summary: CORS support
+              responses:
+                '200':
+                  description: CORS response
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+                    Access-Control-Allow-Headers:
+                      type: string
+                    Access-Control-Allow-Methods:
+                      type: string
+              x-amazon-apigateway-integration:
+                type: mock
+                requestTemplates:
+                  application/json: '{"statusCode":200}'
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
+                      method.response.header.Access-Control-Allow-Origin: !Sub "'${AllowedCorsOrigin}'"
+          /reports/{id}:
+            parameters:
+            - name: id
+              in: path
+              required: true
+              type: string
+            get:
+              summary: Track a report using its report ID
+              responses:
+                '200':
+                  description: Report details
+                '404':
+                  description: Report not found
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ExistingBackendFunctionName}/invocations'
+            put:
+              summary: Update status, assignment, or comments
+              security:
+              - api_key: []
+              responses:
+                '200':
+                  description: Report updated
+                '400':
+                  description: Invalid update
+                '404':
+                  description: Report not found
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ExistingBackendFunctionName}/invocations'
+            options:
+              summary: CORS support
+              responses:
+                '200':
+                  description: CORS response
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+                    Access-Control-Allow-Headers:
+                      type: string
+                    Access-Control-Allow-Methods:
+                      type: string
+              x-amazon-apigateway-integration:
+                type: mock
+                requestTemplates:
+                  application/json: '{"statusCode":200}'
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Methods: "'GET,PUT,OPTIONS'"
+                      method.response.header.Access-Control-Allow-Origin: !Sub "'${AllowedCorsOrigin}'"
+          /upload-url:
+            post:
+              summary: Create a presigned S3 form for a road-damage image
+              responses:
+                '200':
+                  description: Presigned upload form
+                '400':
+                  description: Invalid file
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ExistingBackendFunctionName}/invocations'
+            options:
+              summary: CORS support
+              responses:
+                '200':
+                  description: CORS response
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+                    Access-Control-Allow-Headers:
+                      type: string
+                    Access-Control-Allow-Methods:
+                      type: string
+              x-amazon-apigateway-integration:
+                type: mock
+                requestTemplates:
+                  application/json: '{"statusCode":200}'
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+                      method.response.header.Access-Control-Allow-Origin: !Sub "'${AllowedCorsOrigin}'"
+          /image-url:
+            get:
+              summary: Create a temporary image-view URL for authority staff
+              security:
+              - api_key: []
+              responses:
+                '200':
+                  description: Presigned image-view URL
+                '400':
+                  description: Invalid image key
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ExistingBackendFunctionName}/invocations'
+            options:
+              summary: CORS support
+              responses:
+                '200':
+                  description: CORS response
+                  headers:
+                    Access-Control-Allow-Origin:
+                      type: string
+                    Access-Control-Allow-Headers:
+                      type: string
+                    Access-Control-Allow-Methods:
+                      type: string
+              x-amazon-apigateway-integration:
+                type: mock
+                requestTemplates:
+                  application/json: '{"statusCode":200}'
+                responses:
+                  default:
+                    statusCode: '200'
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+                      method.response.header.Access-Control-Allow-Origin: !Sub "'${AllowedCorsOrigin}'"
+      Tags:
+      - Key: Project
+        Value: 602AZ-Infrastructure-Reporting
+      - Key: Environment
+        Value: !Ref EnvironmentName
+
+  BackendInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ExistingBackendFunctionName
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/*'
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+    - RestApi
+    Properties:
+      RestApiId: !Ref RestApi
+
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref RestApi
+      DeploymentId: !Ref ApiDeployment
+      StageName: prod
+      TracingEnabled: false
+      Variables:
+        REPORTS_TABLE: !Ref ReportsTable
+        IMAGE_BUCKET: !Ref ImageBucket
+        SNS_TOPIC_ARN: !Ref NotificationTopic
+        FAILED_QUEUE_URL: !Ref FailedOperationsQueue
+        SECRET_ARN: !Ref ExternalConfigurationSecret
+        ENVIRONMENT_NAME: !Ref EnvironmentName
+        ALLOWED_ORIGIN: !Ref AllowedCorsOrigin
+        MAX_UPLOAD_BYTES: '10485760'
+      MethodSettings:
+      - ResourcePath: '/*'
+        HttpMethod: '*'
+        MetricsEnabled: true
+        DataTraceEnabled: false
+        LoggingLevel: 'OFF'
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 25
+      Tags:
+      - Key: Project
+        Value: 602AZ-Infrastructure-Reporting
+      - Key: Environment
+        Value: !Ref EnvironmentName
+
+  AuthorityApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub '${ProjectPrefix}-${EnvironmentName}-authority-key-${AWS::StackName}'
+      Enabled: true
+      Tags:
+      - Key: Project
+        Value: 602AZ-Infrastructure-Reporting
+      - Key: Environment
+        Value: !Ref EnvironmentName
+
+  AuthorityUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    DependsOn:
+    - ApiStage
+    Properties:
+      UsagePlanName: !Sub '${ProjectPrefix}-${EnvironmentName}-authority-plan-${AWS::StackName}'
+      ApiStages:
+      - ApiId: !Ref RestApi
+        Stage: !Ref ApiStage
+      Throttle:
+        BurstLimit: 20
+        RateLimit: 10
+      Quota:
+        Limit: 10000
+        Period: MONTH
+      Tags:
+      - Key: Project
+        Value: 602AZ-Infrastructure-Reporting
+      - Key: Environment
+        Value: !Ref EnvironmentName
+
+  AuthorityUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref AuthorityApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref AuthorityUsagePlan
+
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Backend Lambda returned one or more errors in five minutes.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+      - Name: FunctionName
+        Value: !Ref ExistingBackendFunctionName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+      - !Ref NotificationTopic
+
+  LambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Backend Lambda was throttled.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+      - Name: FunctionName
+        Value: !Ref ExistingBackendFunctionName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+      - !Ref NotificationTopic
+
+  Api5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: API Gateway produced one or more 5XX errors in five minutes.
+      Namespace: AWS/ApiGateway
+      MetricName: 5XXError
+      Dimensions:
+      - Name: ApiName
+        Value: !Sub '${ProjectPrefix}-${EnvironmentName}-api'
+      - Name: Stage
+        Value: prod
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+      - !Ref NotificationTopic
+
+  FailedQueueAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: One or more failed operations are waiting in SQS.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+      - Name: QueueName
+        Value: !GetAtt FailedOperationsQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+      - !Ref NotificationTopic
+
+  MonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${ProjectPrefix}-${EnvironmentName}-${AWS::StackName}-monitoring'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric", "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "API Gateway Requests and Errors", "region": "${AWS::Region}", "view": "timeSeries",
+                "metrics": [
+                  ["AWS/ApiGateway", "Count", "ApiName", "${ProjectPrefix}-${EnvironmentName}-api", "Stage", "prod"],
+                  [".", "4XXError", ".", ".", ".", "."],
+                  [".", "5XXError", ".", ".", ".", "."]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "DynamoDB and Failed Queue", "region": "${AWS::Region}", "view": "timeSeries",
+                "metrics": [
+                  ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "${ReportsTable}"],
+                  [".", "ConsumedWriteCapacityUnits", ".", "."],
+                  ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${FailedOperationsQueue.QueueName}"]
+                ]
+              }
+            }
+          ]
+        }
+
+  CloudTrailBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateCloudTrail
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+        - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      Tags:
+      - Key: Project
+        Value: 602AZ-Infrastructure-Reporting
+      - Key: Environment
+        Value: !Ref EnvironmentName
+
+  CloudTrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: CreateCloudTrail
+    Properties:
+      Bucket: !Ref CloudTrailBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: AWSCloudTrailAclCheck
+          Effect: Allow
+          Principal:
+            Service: cloudtrail.amazonaws.com
+          Action: s3:GetBucketAcl
+          Resource: !GetAtt CloudTrailBucket.Arn
+          Condition:
+            StringEquals:
+              AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${AWS::StackName}-trail'
+        - Sid: AWSCloudTrailWrite
+          Effect: Allow
+          Principal:
+            Service: cloudtrail.amazonaws.com
+          Action: s3:PutObject
+          Resource: !Sub '${CloudTrailBucket.Arn}/AWSLogs/${AWS::AccountId}/*'
+          Condition:
+            StringEquals:
+              s3:x-amz-acl: bucket-owner-full-control
+              AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${AWS::StackName}-trail'
+
+  ProjectTrail:
+    Type: AWS::CloudTrail::Trail
+    Condition: CreateCloudTrail
+    DependsOn:
+    - CloudTrailBucketPolicy
+    Properties:
+      TrailName: !Sub '${AWS::StackName}-trail'
+      S3BucketName: !Ref CloudTrailBucket
+      IsLogging: true
+      IncludeGlobalServiceEvents: true
+      IsMultiRegionTrail: false
+      EnableLogFileValidation: true
+      Tags:
+      - Key: Project
+        Value: 602AZ-Infrastructure-Reporting
+      - Key: Environment
+        Value: !Ref EnvironmentName
+
+Outputs:
+  BackendConnectionStatus:
+    Value: Connected to pre-existing Lambda function
+  BackendFunctionName:
+    Value: !Ref ExistingBackendFunctionName
+  BackendFunctionArn:
+    Value: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ExistingBackendFunctionName}'
+  WebsiteBucketName:
+    Value: !Ref WebsiteBucket
+
+  WebsiteUrl:
+    Value: !GetAtt WebsiteBucket.WebsiteURL
+
+  ImageBucketName:
+    Value: !Ref ImageBucket
+
+  ReportsTableName:
+    Value: !Ref ReportsTable
+
+  ApiBaseUrl:
+    Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/prod'
+
+  SubmitReportEndpoint:
+    Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/prod/reports'
+
+  UploadUrlEndpoint:
+    Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/prod/upload-url'
+
+  ImageViewUrlEndpoint:
+    Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/prod/image-url'
+
+  AuthorityApiKeyId:
+    Value: !Ref AuthorityApiKey
+
+  NotificationTopicArn:
+    Value: !Ref NotificationTopic
+
+  FailedOperationsQueueUrl:
+    Value: !Ref FailedOperationsQueue
+
+  ExternalConfigurationSecretArn:
+    Value: !Ref ExternalConfigurationSecret
+
+  MonitoringDashboardName:
+    Value: !Ref MonitoringDashboard
+
+  CloudTrailStatus:
+    Value: !If [CreateCloudTrail, Enabled, Disabled]
+  DeploymentNotice:
+    Value: This stack expects the named Lambda function to exist before stack creation. It creates no IAM role, IAM 
+      policy, or Lambda function.

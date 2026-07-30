@@ -1,0 +1,2735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Cloud-based road and infrastructure reporting system for citizens and local authorities." />
+  <title>RoadWatch | Infrastructure Reporting System</title>
+
+  <style>
+    :root {
+      --bg: #07111f;
+      --bg-soft: #0b1728;
+      --panel: rgba(13, 29, 50, 0.82);
+      --panel-solid: #0f2036;
+      --card: #112743;
+      --card-light: #f7f9fc;
+      --text: #eef5ff;
+      --muted: #9fb0c8;
+      --primary: #38bdf8;
+      --primary-2: #2563eb;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --border: rgba(148, 163, 184, 0.22);
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --container: 1240px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 20% 10%, rgba(37, 99, 235, 0.24), transparent 28%),
+        radial-gradient(circle at 80% 0%, rgba(56, 189, 248, 0.18), transparent 26%),
+        linear-gradient(180deg, #06101d 0%, #081522 45%, #07111f 100%);
+      overflow-x: hidden;
+    }
+
+    body.modal-open {
+      overflow: hidden;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    img,
+    svg {
+      display: block;
+      max-width: 100%;
+    }
+
+    .container {
+      width: min(calc(100% - 32px), var(--container));
+      margin: 0 auto;
+    }
+
+    .glass {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .icon {
+      width: 21px;
+      height: 21px;
+      stroke: currentColor;
+      stroke-width: 1.9;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex: 0 0 auto;
+    }
+
+    .skip-link {
+      position: fixed;
+      top: -50px;
+      left: 18px;
+      z-index: 9999;
+      padding: 12px 18px;
+      color: #07111f;
+      background: #ffffff;
+      border-radius: 10px;
+      transition: 0.2s ease;
+    }
+
+    .skip-link:focus {
+      top: 18px;
+    }
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+      background: rgba(6, 16, 29, 0.8);
+      backdrop-filter: blur(16px);
+    }
+
+    .nav-wrap {
+      min-height: 78px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 22px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      font-size: 1.13rem;
+    }
+
+    .brand-mark {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      box-shadow: 0 12px 32px rgba(37, 99, 235, 0.34);
+    }
+
+    .brand-mark svg {
+      width: 26px;
+      height: 26px;
+      color: white;
+    }
+
+    .brand small {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 0.67rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .main-nav {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      color: #c6d3e5;
+      font-size: 0.92rem;
+      font-weight: 650;
+    }
+
+    .main-nav a {
+      position: relative;
+      padding: 10px 0;
+    }
+
+    .main-nav a::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: 3px;
+      width: 100%;
+      height: 2px;
+      transform: scaleX(0);
+      transform-origin: left;
+      background: linear-gradient(90deg, var(--primary), #60a5fa);
+      transition: transform 0.25s ease;
+    }
+
+    .main-nav a:hover::after,
+    .main-nav a:focus-visible::after {
+      transform: scaleX(1);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      min-height: 46px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      border: 0;
+      border-radius: 13px;
+      padding: 0 18px;
+      font-weight: 760;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+    }
+
+    .btn-primary {
+      color: white;
+      background: linear-gradient(135deg, var(--primary-2), var(--primary));
+      box-shadow: 0 14px 30px rgba(37, 99, 235, 0.3);
+    }
+
+    .btn-primary:hover {
+      box-shadow: 0 18px 36px rgba(37, 99, 235, 0.4);
+    }
+
+    .btn-secondary {
+      color: #eaf3ff;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .btn-light {
+      color: #10233c;
+      background: white;
+    }
+
+    .btn-danger {
+      color: white;
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+    }
+
+    .mobile-menu-button {
+      width: 44px;
+      height: 44px;
+      display: none;
+      place-items: center;
+      color: white;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .hero {
+      position: relative;
+      padding: 92px 0 54px;
+      isolation: isolate;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: linear-gradient(to bottom, black, transparent 92%);
+      z-index: -2;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.08fr 0.92fr;
+      gap: 46px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 22px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      color: #bdeaff;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.24);
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.12);
+      animation: pulse 1.8s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.35); opacity: 0.72; }
+    }
+
+    .hero h1 {
+      max-width: 780px;
+      font-size: clamp(2.6rem, 5vw, 5.25rem);
+      line-height: 0.98;
+      letter-spacing: -0.055em;
+      text-wrap: balance;
+    }
+
+    .gradient-text {
+      color: transparent;
+      background: linear-gradient(90deg, #ffffff 4%, #7dd3fc 48%, #60a5fa 92%);
+      background-clip: text;
+      -webkit-background-clip: text;
+    }
+
+    .hero-copy {
+      max-width: 680px;
+      margin-top: 25px;
+      color: #aebdd1;
+      font-size: 1.08rem;
+      line-height: 1.78;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    .hero-trust {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 22px;
+      margin-top: 28px;
+      color: #cad7e8;
+      font-size: 0.88rem;
+    }
+
+    .trust-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .trust-icon {
+      color: var(--success);
+    }
+
+    .hero-visual {
+      position: relative;
+      min-height: 540px;
+      border-radius: 34px;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 74% 20%, rgba(125, 211, 252, 0.2), transparent 24%),
+        linear-gradient(180deg, rgba(18, 44, 72, 0.92), rgba(8, 22, 39, 0.98));
+      border: 1px solid rgba(125, 211, 252, 0.2);
+      box-shadow: var(--shadow);
+    }
+
+    .visual-topbar {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 4;
+    }
+
+    .live-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-radius: 999px;
+      color: #dffdec;
+      background: rgba(34, 197, 94, 0.14);
+      border: 1px solid rgba(34, 197, 94, 0.28);
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
+    .live-badge span {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 16px rgba(34, 197, 94, 0.9);
+    }
+
+    .visual-menu {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      color: #dbeafe;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .scene-sky {
+      position: absolute;
+      inset: 0 0 42% 0;
+      background:
+        radial-gradient(circle at 78% 18%, rgba(255, 255, 255, 0.78) 0 3%, transparent 3.2%),
+        linear-gradient(180deg, rgba(42, 110, 168, 0.52), rgba(18, 46, 77, 0.08));
+    }
+
+    .scene-city {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 42%;
+      height: 150px;
+      opacity: 0.54;
+      background:
+        linear-gradient(90deg,
+          transparent 0 3%, #17304d 3% 10%, transparent 10% 13%,
+          #1d3b5d 13% 21%, transparent 21% 25%,
+          #143250 25% 34%, transparent 34% 38%,
+          #1c4166 38% 49%, transparent 49% 52%,
+          #183553 52% 63%, transparent 63% 68%,
+          #21496f 68% 78%, transparent 78% 82%,
+          #17334f 82% 96%, transparent 96%);
+      clip-path: polygon(0 42%, 7% 42%, 7% 18%, 13% 18%, 13% 36%, 21% 36%, 21% 9%, 27% 9%, 27% 32%, 35% 32%, 35% 14%, 43% 14%, 43% 39%, 52% 39%, 52% 21%, 61% 21%, 61% 33%, 70% 33%, 70% 7%, 78% 7%, 78% 29%, 86% 29%, 86% 17%, 94% 17%, 94% 41%, 100% 41%, 100% 100%, 0 100%);
+    }
+
+    .road {
+      position: absolute;
+      left: -8%;
+      right: -8%;
+      bottom: -2px;
+      height: 48%;
+      background: linear-gradient(180deg, #293544, #141c27 65%, #0b1119);
+      transform: perspective(620px) rotateX(13deg);
+      transform-origin: bottom;
+      overflow: hidden;
+    }
+
+    .road::before,
+    .road::after {
+      content: "";
+      position: absolute;
+      top: -20%;
+      bottom: -20%;
+      width: 12px;
+      border-radius: 20px;
+      background: repeating-linear-gradient(to bottom, #f8fafc 0 34px, transparent 34px 68px);
+      opacity: 0.8;
+    }
+
+    .road::before {
+      left: 39%;
+      transform: rotate(3deg);
+    }
+
+    .road::after {
+      right: 39%;
+      transform: rotate(-3deg);
+    }
+
+    .pothole {
+      position: absolute;
+      left: 57%;
+      bottom: 88px;
+      width: 140px;
+      height: 50px;
+      border-radius: 50%;
+      background: radial-gradient(ellipse at center, #020617 0 42%, #1f2937 43% 60%, rgba(255,255,255,0.04) 61% 100%);
+      filter: drop-shadow(0 12px 10px rgba(0,0,0,0.4));
+      animation: potholeFix 11s ease-in-out infinite;
+      z-index: 2;
+    }
+
+    @keyframes potholeFix {
+      0%, 36% { transform: scale(1); opacity: 1; }
+      52%, 72% { transform: scale(0.2); opacity: 0.35; }
+      86%, 100% { transform: scale(1); opacity: 1; }
+    }
+
+    .worker-stage {
+      position: absolute;
+      left: 14%;
+      bottom: 80px;
+      width: 260px;
+      height: 360px;
+      z-index: 5;
+      animation: workerWalkIn 1.35s cubic-bezier(.2,.8,.2,1) both, workerWork 6s ease-in-out 1.5s infinite;
+      transform-origin: 50% 100%;
+    }
+
+    @keyframes workerWalkIn {
+      0% { transform: translateX(-520px) translateY(12px) scale(0.94); opacity: 0; }
+      72% { opacity: 1; }
+      100% { transform: translateX(0) translateY(0) scale(1); opacity: 1; }
+    }
+
+    @keyframes workerWork {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      20% { transform: translateY(-4px) rotate(-1.5deg); }
+      40% { transform: translateY(2px) rotate(1.5deg); }
+      60% { transform: translateY(-3px) rotate(-1deg); }
+      80% { transform: translateY(1px) rotate(1deg); }
+    }
+
+    .worker-stage svg {
+      width: 100%;
+      height: 100%;
+      filter: drop-shadow(0 20px 18px rgba(0, 0, 0, 0.34));
+    }
+
+    .speech-card {
+      position: absolute;
+      top: 86px;
+      right: 24px;
+      width: min(280px, 54%);
+      padding: 18px;
+      border-radius: 18px 18px 4px 18px;
+      color: #09203a;
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+      z-index: 7;
+      animation: speechPop 0.6s 1.35s cubic-bezier(.2,.85,.25,1.25) both, speechFloat 4s 2s ease-in-out infinite;
+    }
+
+    @keyframes speechPop {
+      from { opacity: 0; transform: translateY(16px) scale(0.82); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes speechFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-7px); }
+    }
+
+    .speech-card strong {
+      display: block;
+      font-size: 0.95rem;
+      margin-bottom: 5px;
+    }
+
+    .speech-card p {
+      color: #475569;
+      font-size: 0.82rem;
+      line-height: 1.55;
+    }
+
+    .floating-report-card {
+      position: absolute;
+      right: 22px;
+      bottom: 24px;
+      width: 225px;
+      padding: 17px;
+      border-radius: 18px;
+      z-index: 6;
+      background: rgba(7, 17, 31, 0.82);
+      border: 1px solid rgba(125, 211, 252, 0.2);
+      backdrop-filter: blur(12px);
+      animation: cardRise 0.8s 1.75s ease both;
+    }
+
+    @keyframes cardRise {
+      from { opacity: 0; transform: translateY(28px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .report-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .report-card-head span {
+      color: #a9bdd4;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 9px;
+      border-radius: 999px;
+      font-size: 0.68rem;
+      font-weight: 850;
+      color: #dffdec;
+      background: rgba(34, 197, 94, 0.14);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+    }
+
+    .floating-report-card h3 {
+      font-size: 0.98rem;
+      line-height: 1.35;
+      margin-bottom: 11px;
+    }
+
+    .progress-line {
+      height: 7px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .progress-line span {
+      display: block;
+      width: 78%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--primary-2), var(--primary));
+      animation: progressPulse 3s ease-in-out infinite;
+    }
+
+    @keyframes progressPulse {
+      0%, 100% { width: 72%; }
+      50% { width: 86%; }
+    }
+
+    .stats-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-top: 32px;
+    }
+
+    .stat-card {
+      padding: 22px;
+      border-radius: var(--radius-lg);
+      background: rgba(255, 255, 255, 0.055);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+    }
+
+    .stat-card strong {
+      display: block;
+      font-size: 1.8rem;
+      letter-spacing: -0.04em;
+    }
+
+    .stat-card span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .section {
+      padding: 86px 0;
+    }
+
+    .section-soft {
+      background: rgba(4, 13, 24, 0.5);
+      border-top: 1px solid rgba(148, 163, 184, 0.08);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+    }
+
+    .section-header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 28px;
+      margin-bottom: 34px;
+    }
+
+    .section-kicker {
+      display: block;
+      color: #73d3fb;
+      margin-bottom: 10px;
+      font-size: 0.78rem;
+      font-weight: 850;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .section-title {
+      max-width: 720px;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      line-height: 1.05;
+      letter-spacing: -0.045em;
+    }
+
+    .section-copy {
+      max-width: 530px;
+      color: var(--muted);
+      line-height: 1.72;
+    }
+
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 18px;
+    }
+
+    .service-card {
+      position: relative;
+      min-height: 240px;
+      padding: 24px;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba(17, 39, 67, 0.94), rgba(10, 26, 45, 0.98));
+      border: 1px solid rgba(148, 163, 184, 0.17);
+      transition: transform 0.25s ease, border-color 0.25s ease;
+    }
+
+    .service-card:hover {
+      transform: translateY(-7px);
+      border-color: rgba(56, 189, 248, 0.48);
+    }
+
+    .service-card::after {
+      content: "";
+      position: absolute;
+      width: 130px;
+      height: 130px;
+      right: -48px;
+      bottom: -48px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.2), transparent 68%);
+    }
+
+    .service-icon {
+      width: 50px;
+      height: 50px;
+      display: grid;
+      place-items: center;
+      border-radius: 15px;
+      margin-bottom: 22px;
+      color: #dff6ff;
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.8), rgba(56, 189, 248, 0.8));
+      box-shadow: 0 14px 30px rgba(37, 99, 235, 0.22);
+    }
+
+    .service-icon .icon {
+      width: 25px;
+      height: 25px;
+    }
+
+    .service-card h3 {
+      margin-bottom: 10px;
+      font-size: 1.08rem;
+    }
+
+    .service-card p {
+      color: var(--muted);
+      line-height: 1.65;
+      font-size: 0.9rem;
+    }
+
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px;
+    }
+
+    .workflow-card {
+      position: relative;
+      padding: 24px 20px;
+      border-radius: var(--radius-lg);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+    }
+
+    .workflow-card:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -18px;
+      top: 46%;
+      color: #6fbfef;
+      font-size: 1.4rem;
+      font-weight: 900;
+      z-index: 2;
+    }
+
+    .step-number {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px;
+      color: #0b1728;
+      background: #7dd3fc;
+      font-weight: 900;
+      margin-bottom: 16px;
+    }
+
+    .workflow-card h3 {
+      font-size: 0.98rem;
+      margin-bottom: 8px;
+    }
+
+    .workflow-card p {
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.55;
+    }
+
+    .dashboard-shell {
+      border-radius: 28px;
+      overflow: hidden;
+      background: #f5f7fb;
+      color: #12223a;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .dashboard-topbar {
+      min-height: 76px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 0 24px;
+      background: white;
+      border-bottom: 1px solid #e6ebf2;
+    }
+
+    .dashboard-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .dashboard-title .brand-mark {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+    }
+
+    .dashboard-title strong {
+      display: block;
+    }
+
+    .dashboard-title span {
+      color: #64748b;
+      font-size: 0.78rem;
+    }
+
+    .dashboard-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dashboard-icon-button {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      color: #334155;
+      border: 1px solid #dce3ec;
+      border-radius: 12px;
+      background: #ffffff;
+    }
+
+    .dashboard-user {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-left: 10px;
+    }
+
+    .avatar {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: white;
+      background: linear-gradient(135deg, #2563eb, #38bdf8);
+      font-size: 0.85rem;
+      font-weight: 850;
+    }
+
+    .dashboard-body {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      min-height: 650px;
+    }
+
+    .dashboard-sidebar {
+      padding: 22px 14px;
+      background: #10213a;
+      color: #dce8f7;
+    }
+
+    .side-label {
+      display: block;
+      padding: 8px 12px;
+      color: #7890ae;
+      font-size: 0.7rem;
+      font-weight: 850;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .side-link {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      margin: 4px 0;
+      padding: 12px;
+      border: 0;
+      border-radius: 12px;
+      color: #b9cbe0;
+      background: transparent;
+      text-align: left;
+      font-weight: 700;
+    }
+
+    .side-link.active,
+    .side-link:hover {
+      color: white;
+      background: rgba(56, 189, 248, 0.13);
+    }
+
+    .side-count {
+      margin-left: auto;
+      min-width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      color: #dff7ff;
+      background: rgba(56, 189, 248, 0.17);
+      font-size: 0.7rem;
+      font-weight: 850;
+    }
+
+    .dashboard-content {
+      padding: 24px;
+      overflow: hidden;
+    }
+
+    .dashboard-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .dashboard-heading h3 {
+      font-size: 1.38rem;
+      letter-spacing: -0.02em;
+    }
+
+    .dashboard-heading p {
+      color: #64748b;
+      margin-top: 4px;
+      font-size: 0.86rem;
+    }
+
+    .dashboard-search {
+      min-width: 290px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 13px;
+      min-height: 44px;
+      border-radius: 12px;
+      border: 1px solid #dce3ec;
+      background: white;
+    }
+
+    .dashboard-search input {
+      width: 100%;
+      border: 0;
+      outline: 0;
+      color: #1e293b;
+      background: transparent;
+    }
+
+    .mini-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .mini-stat {
+      padding: 18px;
+      border-radius: 15px;
+      background: white;
+      border: 1px solid #e5eaf1;
+    }
+
+    .mini-stat span {
+      color: #64748b;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .mini-stat strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 1.5rem;
+    }
+
+    .mini-stat small {
+      display: block;
+      margin-top: 6px;
+      color: #16a34a;
+      font-size: 0.72rem;
+      font-weight: 750;
+    }
+
+    .table-card {
+      overflow: hidden;
+      border-radius: 16px;
+      border: 1px solid #e5eaf1;
+      background: white;
+    }
+
+    .table-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 14px;
+      border-bottom: 1px solid #edf1f5;
+    }
+
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .filter-chip {
+      padding: 8px 11px;
+      border-radius: 999px;
+      border: 1px solid #dce3ec;
+      color: #475569;
+      background: #ffffff;
+      font-size: 0.75rem;
+      font-weight: 750;
+    }
+
+    .filter-chip.active {
+      color: #1d4ed8;
+      border-color: #bfdbfe;
+      background: #eff6ff;
+    }
+
+    .reports-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    .reports-table th,
+    .reports-table td {
+      padding: 14px 16px;
+      border-bottom: 1px solid #edf1f5;
+      text-align: left;
+      font-size: 0.78rem;
+    }
+
+    .reports-table th {
+      color: #64748b;
+      font-weight: 800;
+      background: #fbfcfe;
+    }
+
+    .reports-table td {
+      color: #334155;
+    }
+
+    .issue-cell {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 210px;
+    }
+
+    .issue-thumb {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      color: #1d4ed8;
+      background: #eff6ff;
+    }
+
+    .issue-cell strong {
+      display: block;
+      font-size: 0.8rem;
+    }
+
+    .issue-cell span {
+      display: block;
+      margin-top: 3px;
+      color: #94a3b8;
+      font-size: 0.7rem;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    .status::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .status.submitted {
+      color: #1d4ed8;
+      background: #eff6ff;
+    }
+
+    .status.review {
+      color: #a16207;
+      background: #fef9c3;
+    }
+
+    .status.progress {
+      color: #7c3aed;
+      background: #f3e8ff;
+    }
+
+    .status.resolved {
+      color: #15803d;
+      background: #dcfce7;
+    }
+
+    .action-dots {
+      border: 0;
+      background: transparent;
+      color: #64748b;
+      font-size: 1.2rem;
+    }
+
+    .track-panel {
+      display: grid;
+      grid-template-columns: 0.95fr 1.05fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .track-card,
+    .impact-card {
+      padding: 30px;
+      border-radius: 26px;
+      background: rgba(255, 255, 255, 0.055);
+      border: 1px solid var(--border);
+    }
+
+    .track-card h3,
+    .impact-card h3 {
+      font-size: 1.4rem;
+      margin-bottom: 10px;
+    }
+
+    .track-card p,
+    .impact-card p {
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .track-form {
+      display: flex;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .track-input-wrap {
+      flex: 1;
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      background: rgba(255, 255, 255, 0.07);
+    }
+
+    .track-input-wrap input {
+      width: 100%;
+      color: white;
+      border: 0;
+      outline: 0;
+      background: transparent;
+    }
+
+    .track-input-wrap input::placeholder {
+      color: #7f92ab;
+    }
+
+    .tracking-result {
+      display: none;
+      margin-top: 18px;
+      padding: 18px;
+      border-radius: 16px;
+      color: #dff7ff;
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+
+    .tracking-result.show {
+      display: block;
+      animation: fadeUp 0.35s ease both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .tracking-steps {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      margin-top: 14px;
+    }
+
+    .tracking-step {
+      text-align: center;
+      color: #7890aa;
+      font-size: 0.66rem;
+      font-weight: 750;
+    }
+
+    .tracking-step::before {
+      content: "";
+      display: block;
+      width: 100%;
+      height: 6px;
+      margin-bottom: 7px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.09);
+    }
+
+    .tracking-step.active {
+      color: #c6f1ff;
+    }
+
+    .tracking-step.active::before {
+      background: linear-gradient(90deg, var(--primary-2), var(--primary));
+    }
+
+    .impact-visual {
+      position: relative;
+      height: 260px;
+      margin-top: 20px;
+      overflow: hidden;
+      border-radius: 18px;
+      background:
+        radial-gradient(circle at 70% 35%, rgba(34, 197, 94, 0.2), transparent 20%),
+        linear-gradient(180deg, #173653, #0b1b2d);
+    }
+
+    .map-road {
+      position: absolute;
+      width: 130%;
+      height: 56px;
+      left: -15%;
+      top: 52%;
+      transform: rotate(-10deg);
+      border: 10px solid #27364a;
+      background: #1e293b;
+      box-shadow: 0 0 0 8px rgba(255,255,255,0.02);
+    }
+
+    .map-road::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      height: 3px;
+      transform: translateY(-50%);
+      background: repeating-linear-gradient(90deg, #facc15 0 30px, transparent 30px 56px);
+    }
+
+    .map-marker {
+      position: absolute;
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      color: white;
+      background: #ef4444;
+      box-shadow: 0 10px 24px rgba(239, 68, 68, 0.36);
+      animation: markerBounce 2s ease-in-out infinite;
+    }
+
+    .map-marker .icon {
+      width: 14px;
+      height: 14px;
+      transform: rotate(45deg);
+    }
+
+    .map-marker.one { left: 22%; top: 32%; }
+    .map-marker.two { right: 25%; top: 48%; animation-delay: 0.4s; background: #f59e0b; }
+    .map-marker.three { right: 10%; top: 23%; animation-delay: 0.8s; background: #22c55e; }
+
+    @keyframes markerBounce {
+      0%, 100% { translate: 0 0; }
+      50% { translate: 0 -8px; }
+    }
+
+    .sdg-banner {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 20px;
+      align-items: center;
+      padding: 26px;
+      border-radius: 24px;
+      color: #09203a;
+      background: linear-gradient(135deg, #fbbf24, #f97316);
+      box-shadow: 0 22px 50px rgba(249, 115, 22, 0.22);
+    }
+
+    .sdg-icon {
+      width: 72px;
+      height: 72px;
+      display: grid;
+      place-items: center;
+      border-radius: 20px;
+      color: white;
+      background: rgba(255, 255, 255, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.35);
+    }
+
+    .sdg-icon .icon {
+      width: 38px;
+      height: 38px;
+    }
+
+    .sdg-banner h3 {
+      font-size: 1.45rem;
+      margin-bottom: 5px;
+    }
+
+    .sdg-banner p {
+      color: rgba(9, 32, 58, 0.76);
+      line-height: 1.6;
+    }
+
+    .site-footer {
+      padding: 58px 0 30px;
+      border-top: 1px solid rgba(148, 163, 184, 0.1);
+      background: #050d17;
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 1.35fr repeat(3, 1fr);
+      gap: 34px;
+    }
+
+    .footer-about p {
+      max-width: 430px;
+      margin-top: 17px;
+      color: #8093aa;
+      line-height: 1.68;
+    }
+
+    .footer-column h4 {
+      margin-bottom: 15px;
+      font-size: 0.92rem;
+    }
+
+    .footer-column a {
+      display: block;
+      width: fit-content;
+      margin: 10px 0;
+      color: #8296ae;
+      font-size: 0.86rem;
+    }
+
+    .footer-column a:hover {
+      color: #dff6ff;
+    }
+
+    .footer-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-top: 38px;
+      padding-top: 22px;
+      border-top: 1px solid rgba(148, 163, 184, 0.1);
+      color: #73869c;
+      font-size: 0.8rem;
+    }
+
+    .floating-help {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 1200;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .help-message {
+      padding: 12px 15px;
+      border-radius: 16px 16px 4px 16px;
+      color: #0b1728;
+      background: white;
+      box-shadow: 0 16px 40px rgba(0,0,0,0.24);
+      font-size: 0.78rem;
+      font-weight: 800;
+      animation: helpNudge 5s ease-in-out infinite;
+    }
+
+    @keyframes helpNudge {
+      0%, 72%, 100% { transform: translateY(0); }
+      78% { transform: translateY(-8px); }
+      84% { transform: translateY(0); }
+    }
+
+    .help-button {
+      width: 58px;
+      height: 58px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 19px;
+      color: white;
+      background: linear-gradient(135deg, var(--primary-2), var(--primary));
+      box-shadow: 0 18px 34px rgba(37, 99, 235, 0.38);
+      animation: helpPulse 2.7s ease-in-out infinite;
+    }
+
+    @keyframes helpPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.06); }
+    }
+
+    .help-button .icon {
+      width: 27px;
+      height: 27px;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: none;
+      place-items: center;
+      padding: 22px;
+      background: rgba(2, 6, 23, 0.78);
+      backdrop-filter: blur(10px);
+    }
+
+    .modal-backdrop.open {
+      display: grid;
+    }
+
+    .modal {
+      width: min(760px, 100%);
+      max-height: min(90vh, 860px);
+      overflow-y: auto;
+      border-radius: 26px;
+      background: #f8fafc;
+      color: #10213a;
+      box-shadow: 0 40px 100px rgba(0,0,0,0.45);
+      animation: modalIn 0.28s ease both;
+    }
+
+    @keyframes modalIn {
+      from { opacity: 0; transform: translateY(22px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 24px 26px;
+      border-bottom: 1px solid #e4e9f0;
+      background: white;
+    }
+
+    .modal-header h2 {
+      font-size: 1.45rem;
+      letter-spacing: -0.025em;
+    }
+
+    .modal-header p {
+      margin-top: 6px;
+      color: #64748b;
+      font-size: 0.88rem;
+      line-height: 1.55;
+    }
+
+    .modal-close {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      color: #475569;
+      border: 1px solid #dce3ec;
+      background: white;
+    }
+
+    .report-form {
+      padding: 26px;
+    }
+
+    .form-progress {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .form-progress span {
+      height: 6px;
+      border-radius: 999px;
+      background: #dbe4ef;
+    }
+
+    .form-progress span.active {
+      background: linear-gradient(90deg, var(--primary-2), var(--primary));
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    .field label {
+      font-size: 0.8rem;
+      font-weight: 800;
+      color: #334155;
+    }
+
+    .field input,
+    .field textarea,
+    .field select {
+      width: 100%;
+      border: 1px solid #d7e0ea;
+      border-radius: 13px;
+      color: #1e293b;
+      background: white;
+      outline: 0;
+      padding: 13px 14px;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .field input:focus,
+    .field textarea:focus,
+    .field select:focus {
+      border-color: #60a5fa;
+      box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.14);
+    }
+
+    .field textarea {
+      min-height: 118px;
+      resize: vertical;
+    }
+
+    .upload-box {
+      display: grid;
+      place-items: center;
+      min-height: 160px;
+      padding: 22px;
+      text-align: center;
+      border: 1.5px dashed #a7bad0;
+      border-radius: 16px;
+      background: #f3f7fb;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .upload-box.dragover {
+      border-color: #2563eb;
+      background: #eff6ff;
+    }
+
+    .upload-icon {
+      width: 54px;
+      height: 54px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 12px;
+      border-radius: 16px;
+      color: #2563eb;
+      background: #dbeafe;
+    }
+
+    .upload-box strong {
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    .upload-box span {
+      color: #64748b;
+      font-size: 0.78rem;
+    }
+
+    .upload-preview {
+      display: none;
+      width: 100%;
+      max-height: 230px;
+      object-fit: cover;
+      border-radius: 13px;
+      margin-top: 14px;
+    }
+
+    .modal-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 24px;
+      padding-top: 22px;
+      border-top: 1px solid #e5eaf1;
+    }
+
+    .form-note {
+      max-width: 420px;
+      color: #64748b;
+      font-size: 0.76rem;
+      line-height: 1.5;
+    }
+
+    .toast-stack {
+      position: fixed;
+      top: 92px;
+      right: 20px;
+      z-index: 3000;
+      display: grid;
+      gap: 10px;
+      width: min(360px, calc(100% - 40px));
+    }
+
+    .toast {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: start;
+      padding: 15px;
+      border-radius: 16px;
+      color: #11233d;
+      background: white;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.28);
+      animation: toastIn 0.35s ease both;
+    }
+
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(24px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    .toast-icon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px;
+      color: white;
+      background: var(--success);
+    }
+
+    .toast strong {
+      display: block;
+      font-size: 0.85rem;
+      margin-bottom: 3px;
+    }
+
+    .toast p {
+      color: #64748b;
+      font-size: 0.76rem;
+      line-height: 1.4;
+    }
+
+    .toast button {
+      border: 0;
+      background: transparent;
+      color: #64748b;
+    }
+
+    .assistant-panel {
+      width: min(450px, 100%);
+    }
+
+    .assistant-body {
+      padding: 24px;
+    }
+
+    .assistant-character {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 18px;
+      align-items: center;
+      padding: 18px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #e0f2fe, #eff6ff);
+    }
+
+    .assistant-character svg {
+      height: 130px;
+    }
+
+    .assistant-character h3 {
+      margin-bottom: 7px;
+    }
+
+    .assistant-character p {
+      color: #64748b;
+      font-size: 0.82rem;
+      line-height: 1.55;
+    }
+
+    .quick-actions {
+      display: grid;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .quick-action {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 13px;
+      border: 1px solid #dce3ec;
+      border-radius: 13px;
+      background: white;
+      color: #334155;
+      text-align: left;
+      font-weight: 750;
+    }
+
+    .quick-action:hover {
+      border-color: #93c5fd;
+      background: #f8fbff;
+    }
+
+    .quick-action .icon {
+      color: #2563eb;
+    }
+
+    @media (max-width: 1080px) {
+      .main-nav {
+        display: none;
+      }
+
+      .mobile-menu-button {
+        display: grid;
+      }
+
+      .hero-grid,
+      .track-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-visual {
+        min-height: 500px;
+      }
+
+      .services-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .workflow-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .workflow-card:not(:last-child)::after {
+        display: none;
+      }
+
+      .dashboard-body {
+        grid-template-columns: 1fr;
+      }
+
+      .dashboard-sidebar {
+        display: none;
+      }
+
+      .footer-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 760px) {
+      .container {
+        width: min(calc(100% - 22px), var(--container));
+      }
+
+      .site-header .btn-secondary {
+        display: none;
+      }
+
+      .hero {
+        padding-top: 62px;
+      }
+
+      .hero h1 {
+        font-size: clamp(2.35rem, 12vw, 4.1rem);
+      }
+
+      .hero-copy {
+        font-size: 0.98rem;
+      }
+
+      .hero-actions .btn {
+        width: 100%;
+      }
+
+      .hero-trust {
+        display: grid;
+        gap: 12px;
+      }
+
+      .hero-visual {
+        min-height: 470px;
+      }
+
+      .worker-stage {
+        left: 0;
+        width: 210px;
+        height: 310px;
+        bottom: 62px;
+      }
+
+      .speech-card {
+        top: 70px;
+        right: 14px;
+        width: 58%;
+        padding: 14px;
+      }
+
+      .floating-report-card {
+        right: 12px;
+        bottom: 14px;
+        width: 195px;
+      }
+
+      .pothole {
+        left: 53%;
+        width: 105px;
+      }
+
+      .stats-strip,
+      .mini-stats {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .section {
+        padding: 66px 0;
+      }
+
+      .section-header {
+        display: block;
+      }
+
+      .section-copy {
+        margin-top: 14px;
+      }
+
+      .services-grid,
+      .workflow-grid,
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .dashboard-topbar,
+      .dashboard-heading,
+      .table-toolbar,
+      .sdg-banner,
+      .footer-bottom {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .dashboard-search {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .dashboard-user span {
+        display: none;
+      }
+
+      .dashboard-content {
+        padding: 16px;
+      }
+
+      .mini-stats {
+        gap: 8px;
+      }
+
+      .mini-stat {
+        padding: 14px;
+      }
+
+      .track-form {
+        flex-direction: column;
+      }
+
+      .tracking-steps {
+        grid-template-columns: 1fr;
+      }
+
+      .tracking-step {
+        text-align: left;
+      }
+
+      .footer-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .help-message {
+        display: none;
+      }
+
+      .floating-help {
+        right: 14px;
+        bottom: 14px;
+      }
+
+      .modal-backdrop {
+        padding: 10px;
+      }
+
+      .modal {
+        border-radius: 18px;
+      }
+
+      .modal-header,
+      .report-form {
+        padding: 18px;
+      }
+
+      .modal-actions {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .modal-actions .btn {
+        width: 100%;
+      }
+
+      .assistant-character {
+        grid-template-columns: 1fr;
+        text-align: center;
+      }
+
+      .assistant-character svg {
+        margin: auto;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+
+  <!-- Reusable SVG icon library -->
+  <svg aria-hidden="true" width="0" height="0" style="position:absolute">
+    <symbol id="i-road" viewBox="0 0 24 24"><path d="M8 3 5 21M16 3l3 18M12 3v4M12 11v4M12 19v2" /></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 7h3l2-3h6l2 3h3v13H4z" /><circle cx="12" cy="13" r="4" /></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15" /></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6z" /><path d="m9 12 2 2 4-4" /></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" /></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" /></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16M7 12h10M10 19h4" /></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4" /><path d="M2 21a7 7 0 0 1 14 0M16 4a4 4 0 0 1 0 8M17 14a7 7 0 0 1 5 7" /></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1v.1H9.6V21a1.7 1.7 0 0 0-.4-1 1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1-.4h-.1V9.6H3a1.7 1.7 0 0 0 1-.4 1.7 1.7 0 0 0 .6-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1v-.1h4V3a1.7 1.7 0 0 0 .4 1 1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.1.4.3.7.6 1 .3.3.6.4 1 .4h.1v4H21a1.7 1.7 0 0 0-1 .4c-.3.3-.5.6-.6 1Z" /></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M9.6 9a2.5 2.5 0 1 1 4.3 1.7c-1.1 1-1.9 1.3-1.9 2.8M12 18h.01" /></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2" /><path d="M11 18h2" /></symbol>
+    <symbol id="i-location" viewBox="0 0 24 24"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></symbol>
+    <symbol id="i-dashboard" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></symbol>
+    <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14 7a5 5 0 0 0-7 7L3 18l3 3 4-4a5 5 0 0 0 7-7l-3 3-3-3z" /></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a5 5 0 1 1 1.4-9.8A6 6 0 0 1 20 11a3.5 3.5 0 0 1-.5 7z" /></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4zM22 2 11 13" /></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 21h20z" /><path d="M12 9v5M12 18h.01" /></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></symbol>
+    <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M20 4C11 4 5 9 5 16c0 2 1 4 3 5 7-2 11-7 12-17Z" /><path d="M5 21c3-4 7-7 12-9" /></symbol>
+    <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v7c0 2 4 3 8 3s8-1 8-3V5M4 12v7c0 2 4 3 8 3s8-1 8-3v-7" /></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8" cy="9" r="2" /><path d="m21 15-5-5L5 20" /></symbol>
+    <symbol id="i-api" viewBox="0 0 24 24"><path d="M8 4H4v4M16 4h4v4M8 20H4v-4M16 20h4v-4M9 9h6v6H9z" /></symbol>
+  </svg>
+
+  <header class="site-header">
+    <div class="container nav-wrap">
+      <a class="brand" href="#home" aria-label="RoadWatch home">
+        <span class="brand-mark"><svg class="icon"><use href="#i-road"></use></svg></span>
+        <span>
+          RoadWatch
+          <small>Infrastructure Reporting</small>
+        </span>
+      </a>
+
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="#report">Report issue</a>
+        <a href="#track">Track report</a>
+        <a href="#dashboard">Authority dashboard</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#sdg">SDG 9</a>
+      </nav>
+
+      <div class="nav-actions">
+        <button class="btn btn-secondary" type="button" onclick="scrollToSection('track')">
+          <svg class="icon"><use href="#i-search"></use></svg>
+          Track report
+        </button>
+        <button class="btn btn-primary" type="button" onclick="openReportModal()">
+          <svg class="icon"><use href="#i-camera"></use></svg>
+          Report damage
+        </button>
+        <button class="mobile-menu-button" type="button" aria-label="Open mobile menu" onclick="toggleMobileMenu()">
+          <svg class="icon"><use href="#i-menu"></use></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <section class="hero" id="home">
+      <div class="container">
+        <div class="hero-grid">
+          <div>
+            <div class="eyebrow"><span class="eyebrow-dot"></span> Connected public infrastructure reporting</div>
+            <h1><span class="gradient-text">Report road damage.</span><br />Help authorities fix it faster.</h1>
+            <p class="hero-copy">
+              A secure, serverless platform that helps citizens report potholes, broken streetlights, damaged pavements and drainage problems directly to the responsible road-maintenance authority.
+            </p>
+
+            <div class="hero-actions">
+              <button class="btn btn-primary" type="button" onclick="openReportModal()">
+                <svg class="icon"><use href="#i-camera"></use></svg>
+                Submit a road report
+              </button>
+              <button class="btn btn-secondary" type="button" onclick="scrollToSection('dashboard')">
+                <svg class="icon"><use href="#i-dashboard"></use></svg>
+                View authority dashboard
+              </button>
+            </div>
+
+            <div class="hero-trust">
+              <span class="trust-item"><svg class="icon trust-icon"><use href="#i-check"></use></svg> Fast photo submission</span>
+              <span class="trust-item"><svg class="icon trust-icon"><use href="#i-shield"></use></svg> Secure cloud workflow</span>
+              <span class="trust-item"><svg class="icon trust-icon"><use href="#i-bell"></use></svg> Status notifications</span>
+            </div>
+          </div>
+
+          <div class="hero-visual" aria-label="Animated road repair scene">
+            <div class="visual-topbar">
+              <div class="live-badge"><span></span> Live maintenance workflow</div>
+              <button class="visual-menu" type="button" aria-label="More options"><svg class="icon"><use href="#i-menu"></use></svg></button>
+            </div>
+            <div class="scene-sky"></div>
+            <div class="scene-city"></div>
+            <div class="road"></div>
+            <div class="pothole"></div>
+
+            <div class="worker-stage" aria-hidden="true">
+              <!-- Original vector road-repair worker illustration -->
+              <svg viewBox="0 0 260 360" role="img" aria-label="Road repair worker">
+                <defs>
+                  <linearGradient id="vest" x1="0" x2="1"><stop offset="0" stop-color="#facc15"/><stop offset="1" stop-color="#f97316"/></linearGradient>
+                  <linearGradient id="shirt" x1="0" x2="1"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#38bdf8"/></linearGradient>
+                  <linearGradient id="pants" x1="0" x2="1"><stop offset="0" stop-color="#1e293b"/><stop offset="1" stop-color="#334155"/></linearGradient>
+                </defs>
+                <ellipse cx="127" cy="335" rx="76" ry="14" fill="rgba(0,0,0,.28)"/>
+                <g transform="translate(20 6)">
+                  <path d="M150 225 196 312" stroke="#4b2e1f" stroke-width="11" stroke-linecap="round"/>
+                  <path d="m188 305 38 2-14 20-34-8Z" fill="#9ca3af" stroke="#d1d5db" stroke-width="3"/>
+                  <path d="M95 210 72 308" stroke="url(#pants)" stroke-width="29" stroke-linecap="round"/>
+                  <path d="M138 214 145 309" stroke="url(#pants)" stroke-width="30" stroke-linecap="round"/>
+                  <path d="M55 311h38l5 17H48c0-9 2-13 7-17Z" fill="#111827"/>
+                  <path d="M128 309h38l9 19h-52c0-9 1-13 5-19Z" fill="#111827"/>
+                  <path d="M75 115c8-28 27-43 52-43 27 0 48 17 55 47l-9 105H82Z" fill="url(#shirt)"/>
+                  <path d="M87 111h83l8 112H79Z" fill="url(#vest)"/>
+                  <path d="M92 119 168 209M166 119 91 209" stroke="#fff7c2" stroke-width="11" opacity=".9"/>
+                  <path d="M79 129c-20 20-27 48-29 76" stroke="#b97552" stroke-width="22" stroke-linecap="round"/>
+                  <path d="M177 128c21 24 27 46 27 73" stroke="#b97552" stroke-width="22" stroke-linecap="round"/>
+                  <path d="M51 201c10 1 18 5 24 12" stroke="#5b341f" stroke-width="10" stroke-linecap="round"/>
+                  <circle cx="126" cy="58" r="38" fill="#b97552"/>
+                  <path d="M89 52c2-29 19-45 41-45 25 0 42 17 44 48-25-9-57-11-85-3Z" fill="#f59e0b"/>
+                  <path d="M96 51h67" stroke="#fde68a" stroke-width="8" stroke-linecap="round"/>
+                  <path d="M105 68c12 10 26 10 39 0" stroke="#6b3c28" stroke-width="3" fill="none" stroke-linecap="round"/>
+                  <circle cx="111" cy="55" r="3" fill="#1f2937"/>
+                  <circle cx="143" cy="55" r="3" fill="#1f2937"/>
+                  <path d="M205 197c9 7 12 15 7 24-8 7-17 5-25-4" fill="#b97552"/>
+                  <path d="M48 200c-8 2-14 8-14 16 0 9 7 15 17 15 9 0 15-6 15-15 0-8-6-14-18-16Z" fill="#b97552"/>
+                </g>
+              </svg>
+            </div>
+
+            <div class="speech-card">
+              <strong>Report received and assigned</strong>
+              <p>The road-maintenance team has been notified and the issue is now being reviewed.</p>
+            </div>
+
+            <div class="floating-report-card">
+              <div class="report-card-head"><span>REPORT-2026-1042</span><span class="status-chip">In progress</span></div>
+              <h3>Pothole near Station Road junction</h3>
+              <div class="progress-line"><span></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="stats-strip" aria-label="Project statistics">
+          <div class="stat-card"><strong>2 min</strong><span>Average report submission</span></div>
+          <div class="stat-card"><strong>24/7</strong><span>Serverless service availability</span></div>
+          <div class="stat-card"><strong>5</strong><span>Report progress stages</span></div>
+          <div class="stat-card"><strong>SDG 9</strong><span>Industry and infrastructure</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-soft" id="report">
+      <div class="container">
+        <div class="section-header">
+          <div>
+            <span class="section-kicker">Citizen services</span>
+            <h2 class="section-title">Everything needed to report an infrastructure problem</h2>
+          </div>
+          <p class="section-copy">The citizen experience is designed to be simple, mobile-friendly and accessible while still collecting enough evidence for authority staff to investigate and prioritise repairs.</p>
+        </div>
+
+        <div class="services-grid">
+          <article class="service-card">
+            <div class="service-icon"><svg class="icon"><use href="#i-camera"></use></svg></div>
+            <h3>Photo evidence</h3>
+            <p>Upload a clear image of a pothole, damaged road surface, broken streetlight, pavement defect or drainage problem.</p>
+          </article>
+          <article class="service-card">
+            <div class="service-icon"><svg class="icon"><use href="#i-location"></use></svg></div>
+            <h3>Precise location</h3>
+            <p>Add the road name, postcode, landmark or GPS coordinates to help the correct maintenance team find the issue quickly.</p>
+          </article>
+          <article class="service-card">
+            <div class="service-icon"><svg class="icon"><use href="#i-search"></use></svg></div>
+            <h3>Report tracking</h3>
+            <p>Use the generated report ID to view the current status from submission through review, assignment and final resolution.</p>
+          </article>
+          <article class="service-card">
+            <div class="service-icon"><svg class="icon"><use href="#i-bell"></use></svg></div>
+            <h3>Email updates</h3>
+            <p>Receive automatic notifications when a report is created, assigned, updated or marked as resolved by authority staff.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="how-it-works">
+      <div class="container">
+        <div class="section-header">
+          <div>
+            <span class="section-kicker">Serverless workflow</span>
+            <h2 class="section-title">From citizen report to completed road repair</h2>
+          </div>
+          <p class="section-copy">The platform uses an event-driven AWS architecture to process reports, store photographs and metadata, notify staff and monitor the application.</p>
+        </div>
+
+        <div class="workflow-grid">
+          <article class="workflow-card"><div class="step-number">1</div><h3>Citizen submits</h3><p>The user enters issue details, location and chooses a photograph.</p></article>
+          <article class="workflow-card"><div class="step-number">2</div><h3>Photo uploads</h3><p>The browser uploads the image directly to the protected S3 image bucket.</p></article>
+          <article class="workflow-card"><div class="step-number">3</div><h3>Report is stored</h3><p>Lambda validates the request and stores report metadata in DynamoDB.</p></article>
+          <article class="workflow-card"><div class="step-number">4</div><h3>Authority manages</h3><p>Staff search, assign and update reports using the authority dashboard.</p></article>
+          <article class="workflow-card"><div class="step-number">5</div><h3>Citizen is notified</h3><p>SNS sends progress updates until the infrastructure issue is resolved.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-soft" id="dashboard">
+      <div class="container">
+        <div class="section-header">
+          <div>
+            <span class="section-kicker">Authority workspace</span>
+            <h2 class="section-title">Professional dashboard for road-maintenance teams</h2>
+          </div>
+          <p class="section-copy">A central workspace for council or highway-authority staff to review evidence, filter reports, assign teams, update statuses and maintain accountability.</p>
+        </div>
+
+        <div class="dashboard-shell">
+          <div class="dashboard-topbar">
+            <div class="dashboard-title">
+              <span class="brand-mark"><svg class="icon"><use href="#i-road"></use></svg></span>
+              <div><strong>RoadWatch Authority</strong><span>Maintenance operations dashboard</span></div>
+            </div>
+            <div class="dashboard-actions">
+              <button class="dashboard-icon-button" type="button" aria-label="Search"><svg class="icon"><use href="#i-search"></use></svg></button>
+              <button class="dashboard-icon-button" type="button" aria-label="Notifications"><svg class="icon"><use href="#i-bell"></use></svg></button>
+              <div class="dashboard-user"><span>Road Operations</span><div class="avatar">RO</div></div>
+            </div>
+          </div>
+
+          <div class="dashboard-body">
+            <aside class="dashboard-sidebar">
+              <span class="side-label">Workspace</span>
+              <button class="side-link active" type="button"><svg class="icon"><use href="#i-dashboard"></use></svg> Overview</button>
+              <button class="side-link" type="button"><svg class="icon"><use href="#i-list"></use></svg> All reports <span class="side-count">36</span></button>
+              <button class="side-link" type="button"><svg class="icon"><use href="#i-alert"></use></svg> High priority <span class="side-count">7</span></button>
+              <button class="side-link" type="button"><svg class="icon"><use href="#i-users"></use></svg> Assigned teams</button>
+              <button class="side-link" type="button"><svg class="icon"><use href="#i-chart"></use></svg> Analytics</button>
+              <span class="side-label" style="margin-top:16px">System</span>
+              <button class="side-link" type="button"><svg class="icon"><use href="#i-bell"></use></svg> Notifications</button>
+              <button class="side-link" type="button"><svg class="icon"><use href="#i-settings"></use></svg> Settings</button>
+            </aside>
+
+            <div class="dashboard-content">
+              <div class="dashboard-heading">
+                <div><h3>Infrastructure reports</h3><p>Review and manage issues reported by citizens.</p></div>
+                <label class="dashboard-search"><svg class="icon"><use href="#i-search"></use></svg><input id="dashboardSearch" type="search" placeholder="Search reports, roads or locations" /></label>
+              </div>
+
+              <div class="mini-stats">
+                <div class="mini-stat"><span>Total reports</span><strong>248</strong><small>+12 this week</small></div>
+                <div class="mini-stat"><span>Under review</span><strong>36</strong><small>8 need attention</small></div>
+                <div class="mini-stat"><span>In progress</span><strong>74</strong><small>19 assigned today</small></div>
+                <div class="mini-stat"><span>Resolved</span><strong>138</strong><small>92% within SLA</small></div>
+              </div>
+
+              <div class="table-card">
+                <div class="table-toolbar">
+                  <div class="filters">
+                    <button class="filter-chip active" type="button" data-filter="all">All reports</button>
+                    <button class="filter-chip" type="button" data-filter="submitted">Submitted</button>
+                    <button class="filter-chip" type="button" data-filter="review">Under review</button>
+                    <button class="filter-chip" type="button" data-filter="progress">In progress</button>
+                    <button class="filter-chip" type="button" data-filter="resolved">Resolved</button>
+                  </div>
+                  <button class="filter-chip" type="button"><svg class="icon" style="width:15px;height:15px;display:inline-block;vertical-align:-3px;margin-right:5px"><use href="#i-filter"></use></svg>More filters</button>
+                </div>
+
+                <div style="overflow-x:auto">
+                  <table class="reports-table" aria-label="Infrastructure reports">
+                    <thead><tr><th>Issue</th><th>Report ID</th><th>Location</th><th>Priority</th><th>Status</th><th>Assigned team</th><th></th></tr></thead>
+                    <tbody id="reportRows">
+                      <tr data-status="progress"><td><div class="issue-cell"><div class="issue-thumb"><svg class="icon"><use href="#i-road"></use></svg></div><div><strong>Large pothole</strong><span>Photo evidence attached</span></div></div></td><td>REPORT-1042</td><td>Station Road</td><td>High</td><td><span class="status progress">In progress</span></td><td>Road Team A</td><td><button class="action-dots">•••</button></td></tr>
+                      <tr data-status="review"><td><div class="issue-cell"><div class="issue-thumb"><svg class="icon"><use href="#i-alert"></use></svg></div><div><strong>Broken streetlight</strong><span>Electrical hazard</span></div></div></td><td>REPORT-1038</td><td>King Street</td><td>Medium</td><td><span class="status review">Under review</span></td><td>Unassigned</td><td><button class="action-dots">•••</button></td></tr>
+                      <tr data-status="submitted"><td><div class="issue-cell"><div class="issue-thumb"><svg class="icon"><use href="#i-image"></use></svg></div><div><strong>Damaged pavement</strong><span>Accessibility concern</span></div></div></td><td>REPORT-1031</td><td>High Road</td><td>Medium</td><td><span class="status submitted">Submitted</span></td><td>Unassigned</td><td><button class="action-dots">•••</button></td></tr>
+                      <tr data-status="resolved"><td><div class="issue-cell"><div class="issue-thumb"><svg class="icon"><use href="#i-map"></use></svg></div><div><strong>Blocked drainage</strong><span>Flooding risk removed</span></div></div></td><td>REPORT-1026</td><td>Market Lane</td><td>High</td><td><span class="status resolved">Resolved</span></td><td>Drainage Team</td><td><button class="action-dots">•••</button></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="track">
+      <div class="container">
+        <div class="section-header">
+          <div>
+            <span class="section-kicker">Transparent progress</span>
+            <h2 class="section-title">Track a report and see how local infrastructure improves</h2>
+          </div>
+        </div>
+
+        <div class="track-panel">
+          <div class="track-card">
+            <h3>Track your infrastructure report</h3>
+            <p>Enter the report ID received after submission. When connected to API Gateway, this section calls <strong>GET /reports/{id}</strong>.</p>
+            <div class="track-form">
+              <label class="track-input-wrap"><svg class="icon"><use href="#i-search"></use></svg><input id="trackReportId" type="text" placeholder="Example: REPORT-20260721-A1B2C3D4" /></label>
+              <button class="btn btn-primary" type="button" onclick="trackReport()">Track now</button>
+            </div>
+            <div class="tracking-result" id="trackingResult">
+              <strong id="trackingTitle">Report located</strong>
+              <p id="trackingMessage" style="margin-top:6px">Your report is currently being reviewed by the road-maintenance authority.</p>
+              <div class="tracking-steps">
+                <div class="tracking-step active">Submitted</div>
+                <div class="tracking-step active">Under review</div>
+                <div class="tracking-step">Assigned</div>
+                <div class="tracking-step">In progress</div>
+                <div class="tracking-step">Resolved</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="impact-card">
+            <h3>Location-based maintenance visibility</h3>
+            <p>Reports can be grouped by road, area, type and status so authorities can identify infrastructure hotspots and allocate repair teams more effectively.</p>
+            <div class="impact-visual">
+              <div class="map-road"></div>
+              <div class="map-marker one"><svg class="icon"><use href="#i-alert"></use></svg></div>
+              <div class="map-marker two"><svg class="icon"><use href="#i-clock"></use></svg></div>
+              <div class="map-marker three"><svg class="icon"><use href="#i-check"></use></svg></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-soft" id="sdg">
+      <div class="container">
+        <div class="sdg-banner">
+          <div class="sdg-icon"><svg class="icon"><use href="#i-leaf"></use></svg></div>
+          <div><h3>Supporting UN Sustainable Development Goal 9</h3><p>The project promotes resilient infrastructure, digital public services, innovation, better maintenance planning and more transparent communication between citizens and authorities.</p></div>
+          <button class="btn btn-light" type="button" onclick="showToast('SDG 9 impact', 'This solution supports resilient infrastructure and more efficient maintenance services.')">View project impact</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-about">
+          <a class="brand" href="#home"><span class="brand-mark"><svg class="icon"><use href="#i-road"></use></svg></span><span>RoadWatch<small>Infrastructure Reporting</small></span></a>
+          <p>Prototype serverless infrastructure-reporting platform developed for the Coventry University BSc Cloud Computing 602AZ project.</p>
+        </div>
+        <div class="footer-column"><h4>Citizen services</h4><a href="#report">Report road damage</a><a href="#track">Track a report</a><a href="#how-it-works">How it works</a></div>
+        <div class="footer-column"><h4>Authority</h4><a href="#dashboard">Dashboard</a><a href="#dashboard">Report management</a><a href="#dashboard">Analytics</a></div>
+        <div class="footer-column"><h4>Project</h4><a href="#sdg">UN SDG 9</a><a href="#how-it-works">Serverless architecture</a><a href="#home">Cloud services</a></div>
+      </div>
+      <div class="footer-bottom"><span>© 2026 RoadWatch. Academic prototype.</span><span>Built with AWS serverless services in us-east-1.</span></div>
+    </div>
+  </footer>
+
+  <div class="floating-help">
+    <div class="help-message">Need help reporting damage?</div>
+    <button class="help-button" type="button" aria-label="Open reporting assistant" onclick="openAssistantModal()"><svg class="icon"><use href="#i-help"></use></svg></button>
+  </div>
+
+  <div class="modal-backdrop" id="reportModal" role="dialog" aria-modal="true" aria-labelledby="reportModalTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <div><h2 id="reportModalTitle">Submit an infrastructure report</h2><p>Add clear information so the responsible authority can review and resolve the problem.</p></div>
+        <button class="modal-close" type="button" aria-label="Close" onclick="closeModal('reportModal')"><svg class="icon"><use href="#i-x"></use></svg></button>
+      </div>
+
+      <form class="report-form" id="reportForm">
+        <div class="form-progress"><span class="active"></span><span class="active"></span><span></span></div>
+        <div class="form-grid">
+          <div class="field"><label for="issueType">Issue type</label><select id="issueType" required><option value="">Select an issue</option><option>Pothole</option><option>Road damage</option><option>Broken streetlight</option><option>Damaged pavement</option><option>Drainage issue</option><option>Road sign damage</option><option>Other infrastructure issue</option></select></div>
+          <div class="field"><label for="citizenEmail">Email for updates</label><input id="citizenEmail" type="email" placeholder="name@example.com" /></div>
+          <div class="field full"><label for="description">Description</label><textarea id="description" required placeholder="Describe the problem, size, risk and any useful nearby landmark."></textarea></div>
+          <div class="field full"><label for="location">Location</label><input id="location" type="text" required placeholder="Road name, postcode, landmark or coordinates" /></div>
+          <div class="field full">
+            <label>Photo evidence</label>
+            <label class="upload-box" id="uploadBox" for="photoInput">
+              <span class="upload-icon"><svg class="icon"><use href="#i-upload"></use></svg></span>
+              <strong id="uploadTitle">Choose or drag a road-damage photo</strong>
+              <span>JPEG, PNG, WebP, HEIC or HEIF. Maximum 10 MB.</span>
+              <input id="photoInput" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden />
+              <img class="upload-preview" id="uploadPreview" alt="Selected report photo preview" />
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <p class="form-note">This prototype submits to API Gateway when <code>API_BASE_URL</code> is configured. Do not place a private authority API key in public frontend code.</p>
+          <button class="btn btn-primary" id="submitReportButton" type="submit"><svg class="icon"><use href="#i-send"></use></svg>Submit report</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="assistantModal" role="dialog" aria-modal="true" aria-labelledby="assistantTitle">
+    <div class="modal assistant-panel">
+      <div class="modal-header">
+        <div><h2 id="assistantTitle">RoadWatch reporting assistant</h2><p>Choose an action and the assistant will guide you.</p></div>
+        <button class="modal-close" type="button" aria-label="Close" onclick="closeModal('assistantModal')"><svg class="icon"><use href="#i-x"></use></svg></button>
+      </div>
+      <div class="assistant-body">
+        <div class="assistant-character">
+          <svg viewBox="0 0 140 160" aria-hidden="true">
+            <ellipse cx="70" cy="145" rx="45" ry="8" fill="rgba(15,23,42,.12)"/>
+            <circle cx="70" cy="48" r="24" fill="#b97552"/>
+            <path d="M47 44c1-18 11-29 24-29 15 0 26 11 27 30-15-6-34-7-51-1Z" fill="#f59e0b"/>
+            <path d="M50 46h44" stroke="#fde68a" stroke-width="5" stroke-linecap="round"/>
+            <path d="M43 76c6-17 16-25 28-25 15 0 25 9 29 27l-4 48H46Z" fill="#2563eb"/>
+            <path d="M48 76h46l4 50H44Z" fill="#fbbf24"/>
+            <path d="m52 80 40 42M90 80 50 122" stroke="#fff" stroke-width="6" opacity=".85"/>
+            <path d="M55 126 50 145M83 126l8 19" stroke="#334155" stroke-width="13" stroke-linecap="round"/>
+          </svg>
+          <div><h3>Hello, I’m Alex.</h3><p>I can help you report damage, find the report ID tracker or understand what information the road-maintenance team needs.</p></div>
+        </div>
+        <div class="quick-actions">
+          <button class="quick-action" type="button" onclick="closeModal('assistantModal'); openReportModal();"><svg class="icon"><use href="#i-camera"></use></svg>Start a new road report</button>
+          <button class="quick-action" type="button" onclick="closeModal('assistantModal'); scrollToSection('track');"><svg class="icon"><use href="#i-search"></use></svg>Track an existing report</button>
+          <button class="quick-action" type="button" onclick="showToast('Photo guidance', 'Take a clear photo from a safe position. Include nearby landmarks where possible.')"><svg class="icon"><use href="#i-image"></use></svg>How to take a useful photo</button>
+          <button class="quick-action" type="button" onclick="showToast('Safety first', 'Do not stand in traffic or enter a dangerous area to take a photograph.')"><svg class="icon"><use href="#i-shield"></use></svg>Road safety guidance</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+  <script>
+    "use strict";
+
+    /*
+      ================================================================
+      AWS API CONFIGURATION
+      ================================================================
+      Replace API_BASE_URL with the API Gateway output from CloudFormation.
+      Example:
+      https://abc123.execute-api.us-east-1.amazonaws.com/dev
+
+      Citizen routes used by this page:
+      POST /upload-url
+      POST /reports
+      GET  /reports/{id}
+
+      Authority routes should not expose an API key in public S3 JavaScript.
+      For a production system, use Cognito or another secure login method.
+    */
+    const API_BASE_URL = "https://3b4xuqk287.execute-api.us-east-1.amazonaws.com/prod";
+
+    const appState = {
+      selectedPhoto: null,
+      uploadedImageKey: ""
+    };
+
+    function scrollToSection(id) {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function toggleMobileMenu() {
+      showToast("Navigation", "Use the page sections or the report button to continue.");
+    }
+
+    function openReportModal() {
+      openModal("reportModal");
+    }
+
+    function openAssistantModal() {
+      openModal("assistantModal");
+    }
+
+    function openModal(id) {
+      const modal = document.getElementById(id);
+      if (!modal) return;
+      modal.classList.add("open");
+      document.body.classList.add("modal-open");
+    }
+
+    function closeModal(id) {
+      const modal = document.getElementById(id);
+      if (!modal) return;
+      modal.classList.remove("open");
+      if (!document.querySelector(".modal-backdrop.open")) {
+        document.body.classList.remove("modal-open");
+      }
+    }
+
+    document.querySelectorAll(".modal-backdrop").forEach((backdrop) => {
+      backdrop.addEventListener("click", (event) => {
+        if (event.target === backdrop) closeModal(backdrop.id);
+      });
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        document.querySelectorAll(".modal-backdrop.open").forEach((modal) => closeModal(modal.id));
+      }
+    });
+
+    function showToast(title, message, type = "success") {
+      const stack = document.getElementById("toastStack");
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      toast.innerHTML = `
+        <div class="toast-icon" style="background:${type === "error" ? "#ef4444" : type === "warning" ? "#f59e0b" : "#22c55e"}">
+          <svg class="icon"><use href="#${type === "error" ? "i-alert" : "i-check"}"></use></svg>
+        </div>
+        <div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(message)}</p></div>
+        <button type="button" aria-label="Dismiss notification">×</button>
+      `;
+      toast.querySelector("button").addEventListener("click", () => toast.remove());
+      stack.appendChild(toast);
+      window.setTimeout(() => toast.remove(), 5200);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    const photoInput = document.getElementById("photoInput");
+    const uploadBox = document.getElementById("uploadBox");
+    const uploadPreview = document.getElementById("uploadPreview");
+    const uploadTitle = document.getElementById("uploadTitle");
+
+    photoInput.addEventListener("change", () => handlePhoto(photoInput.files?.[0]));
+
+    ["dragenter", "dragover"].forEach((eventName) => {
+      uploadBox.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        uploadBox.classList.add("dragover");
+      });
+    });
+
+    ["dragleave", "drop"].forEach((eventName) => {
+      uploadBox.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        uploadBox.classList.remove("dragover");
+      });
+    });
+
+    uploadBox.addEventListener("drop", (event) => handlePhoto(event.dataTransfer.files?.[0]));
+
+    function handlePhoto(file) {
+      if (!file) return;
+      const allowed = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+      if (!allowed.includes(file.type)) {
+        showToast("Unsupported photo", "Please use JPEG, PNG, WebP, HEIC or HEIF.", "error");
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        showToast("Photo is too large", "The maximum upload size is 10 MB.", "error");
+        return;
+      }
+
+      appState.selectedPhoto = file;
+      uploadTitle.textContent = file.name;
+
+      if (["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+        uploadPreview.src = URL.createObjectURL(file);
+        uploadPreview.style.display = "block";
+      } else {
+        uploadPreview.style.display = "none";
+      }
+    }
+
+    async function apiRequest(path, options = {}) {
+      if (!API_BASE_URL) {
+        throw new Error("API_BASE_URL has not been configured in the HTML file.");
+      }
+
+      const response = await fetch(`${API_BASE_URL}${path}`, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(options.headers || {})
+        }
+      });
+
+      const text = await response.text();
+      let data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch { data = { message: text }; }
+
+      if (!response.ok) {
+        throw new Error(data.message || `Request failed with status ${response.status}`);
+      }
+      return data;
+    }
+
+    async function uploadPhotoToS3(file) {
+      const uploadConfig = await apiRequest("/upload-url", {
+        method: "POST",
+        body: JSON.stringify({ fileName: file.name, contentType: file.type })
+      });
+
+      const formData = new FormData();
+      Object.entries(uploadConfig.fields || {}).forEach(([key, value]) => formData.append(key, value));
+      formData.append("file", file);
+
+      const uploadResponse = await fetch(uploadConfig.uploadUrl, { method: "POST", body: formData });
+      if (!uploadResponse.ok) throw new Error("The photo could not be uploaded to S3.");
+      return uploadConfig.imageKey;
+    }
+
+    document.getElementById("reportForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = document.getElementById("submitReportButton");
+      const original = button.innerHTML;
+      button.disabled = true;
+      button.textContent = "Submitting report...";
+
+      try {
+        let imageKey = "";
+        if (appState.selectedPhoto) imageKey = await uploadPhotoToS3(appState.selectedPhoto);
+
+        const payload = {
+          issueType: document.getElementById("issueType").value,
+          citizenEmail: document.getElementById("citizenEmail").value.trim(),
+          description: document.getElementById("description").value.trim(),
+          location: document.getElementById("location").value.trim(),
+          imageKey
+        };
+
+        if (!payload.issueType || !payload.description || !payload.location) {
+          throw new Error("Please complete the issue type, description and location fields.");
+        }
+
+        if (!API_BASE_URL) {
+          const demoId = `REPORT-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+          showToast("Prototype report created", `Demo report ID: ${demoId}`);
+        } else {
+          const result = await apiRequest("/reports", { method: "POST", body: JSON.stringify(payload) });
+          showToast("Report submitted", `Your report ID is ${result.reportId}.`);
+        }
+
+        event.target.reset();
+        appState.selectedPhoto = null;
+        uploadPreview.style.display = "none";
+        uploadTitle.textContent = "Choose or drag a road-damage photo";
+        closeModal("reportModal");
+      } catch (error) {
+        showToast("Submission failed", error.message, "error");
+      } finally {
+        button.disabled = false;
+        button.innerHTML = original;
+      }
+    });
+
+    async function trackReport() {
+      const reportId = document.getElementById("trackReportId").value.trim();
+      const resultBox = document.getElementById("trackingResult");
+      const title = document.getElementById("trackingTitle");
+      const message = document.getElementById("trackingMessage");
+
+      if (!reportId) {
+        showToast("Report ID required", "Enter your report ID before searching.", "warning");
+        return;
+      }
+
+      try {
+        if (!API_BASE_URL) {
+          title.textContent = `${reportId} — Under Review`;
+          message.textContent = "Demo mode: the report has been received and is being reviewed by the maintenance authority.";
+        } else {
+          const report = await apiRequest(`/reports/${encodeURIComponent(reportId)}`, { method: "GET" });
+          title.textContent = `${report.reportId} — ${report.status}`;
+          message.textContent = `${report.issueType} at ${report.location}. Last updated: ${report.updatedAt || report.createdAt}.`;
+          updateTrackingSteps(report.status);
+        }
+        resultBox.classList.add("show");
+      } catch (error) {
+        resultBox.classList.remove("show");
+        showToast("Report not found", error.message, "error");
+      }
+    }
+
+    function updateTrackingSteps(status) {
+      const order = ["Submitted", "Under Review", "Assigned", "In Progress", "Resolved"];
+      const currentIndex = Math.max(0, order.indexOf(status));
+      document.querySelectorAll(".tracking-step").forEach((step, index) => step.classList.toggle("active", index <= currentIndex));
+    }
+
+    document.getElementById("dashboardSearch").addEventListener("input", filterDashboardRows);
+
+    document.querySelectorAll(".filter-chip[data-filter]").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        document.querySelectorAll(".filter-chip[data-filter]").forEach((item) => item.classList.remove("active"));
+        chip.classList.add("active");
+        filterDashboardRows();
+      });
+    });
+
+    function filterDashboardRows() {
+      const search = document.getElementById("dashboardSearch").value.trim().toLowerCase();
+      const activeFilter = document.querySelector(".filter-chip[data-filter].active")?.dataset.filter || "all";
+      document.querySelectorAll("#reportRows tr").forEach((row) => {
+        const textMatch = row.textContent.toLowerCase().includes(search);
+        const statusMatch = activeFilter === "all" || row.dataset.status === activeFilter;
+        row.style.display = textMatch && statusMatch ? "table-row" : "none";
+      });
+    }
+
+    window.setTimeout(() => {
+      showToast("Welcome to RoadWatch", "Use Report damage to submit a road or public infrastructure issue.");
+    }, 1900);
+  </script>
+</body>
+</html>
